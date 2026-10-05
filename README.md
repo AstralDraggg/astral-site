@@ -161,7 +161,37 @@ npm run key:add -- ASTRAL-XXXX-YYYY-ZZZZ sub-30
 
 ---
 
-## 5. Частые вопросы
+## 5. Лоадер: кнопки и пересборка exe
+
+Исходники лоадера лежат отдельно (папка `Loader` на рабочем столе).
+
+Кнопки **«Войти через сайт»**, **«Личный кабинет»**, **«Продлить подписку»**
+и **«Сбросить HWID»** открывают страницы сайта. Адрес берётся из
+`Loader\main.py`:
+
+```python
+SITE_URL_DEFAULT = 'http://localhost:3001'
+```
+
+После публикации поменяй его на реальный адрес сайта
+(например `https://astral-site.vercel.app`) — и, если рядом лежит
+`Loader\config.json`, обнови `"site_url"` в нём.
+
+Пересборка exe:
+
+```powershell
+cd C:\Users\Артур\Desktop\Loader
+python -m PyInstaller Astral.spec --noconfirm
+```
+
+Готовый файл — `Loader\dist\Astral.exe`:
+
+- для локальной разработки положи его в `backend/downloads/`;
+- для сайта загрузи в GitHub Release и вставь ссылку в `LAUNCHER_URL`.
+
+---
+
+## 6. Частые вопросы
 
 - **Обновить сайт после правок:** `git add . && git commit -m "fix" && git push` —
   Vercel подхватит и пересоберёт автоматически.
