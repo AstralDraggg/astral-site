@@ -565,6 +565,8 @@ function setDiagHeader(response: ServerResponse, name: string, value: string): v
  */
 export async function nodeHandler(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = request.url ?? '/';
+  setDiagHeader(response, 'X-Astral-Url', url);
+  setDiagHeader(response, 'X-Astral-Method', request.method ?? 'unknown');
   const isApi = url === '/api' || url.startsWith('/api/');
 
   // Диагностика отвечает даже при упавшей инициализации БД,
@@ -608,13 +610,15 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
     return;
   }
 
-  if (request.method === 'GET' && url === '/api/health') {
+  const isGetLike = request.method === 'GET' || request.method === 'HEAD';
+
+  if (isGetLike && url === '/api/health') {
     sendJson(response, 200, { ok: true, service: 'astral-backend', database: isRemoteDb() ? 'turso' : 'file' });
     return;
   }
 
   // Диагностика: что видит сервер (без значений секретов).
-  if (request.method === 'GET' && url === '/api/diag') {
+  if (isGetLike && url === '/api/diag') {
     const tursoUrl = process.env.TURSO_DATABASE_URL ?? '';
     let dbHost: string | null = null;
 
