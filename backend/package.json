@@ -1,0 +1,21 @@
+{
+  "name": "astral-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "key:add": "tsx src/addKey.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.9",
+    "nodemailer": "^10.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

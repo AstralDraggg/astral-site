@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.vercel/
+.env
+*.log
+
+# локальная база разработки и старые данные аккаунтов
+backend/data/
+
+# большие бинарники лоадера не держим в git (в проде используется LAUNCHER_URL)
+backend/downloads/
