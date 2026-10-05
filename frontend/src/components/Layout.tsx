@@ -10,6 +10,7 @@ import profileIcon from '../../assets/user.svg';
 import moonIcon from '../../assets/moon.svg';
 import sunIcon from '../../assets/sun.svg';
 import peopleIcon from '../../assets/people-community.svg';
+import adminIcon from '../../assets/ranking.svg';
 import { AuthUser, tokenKey } from '../auth';
 
 const navItems = [
@@ -118,6 +119,16 @@ function Layout({ transitionStage = 'idle' }: LayoutProps) {
               <span>{item.label}</span>
             </NavLink>
           ))}
+
+          {currentUser?.role === 'admin' && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) => `nav-link${isActive ? ' nav-link-active' : ''}`}
+            >
+              <img src={adminIcon} alt="" aria-hidden="true" className="nav-icon" />
+              <span>Админ</span>
+            </NavLink>
+          )}
         </nav>
 
         <div className="auth-links">

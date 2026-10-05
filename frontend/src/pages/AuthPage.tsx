@@ -371,10 +371,11 @@ function AuthPage({ mode }: AuthPageProps) {
             )}
 
             <label className="field">
-              <span>Email</span>
+              <span>{mode === 'login' ? 'Email или юзернейм' : 'Email'}</span>
               <input
-                type="email"
-                placeholder="you@example.com"
+                type={mode === 'login' ? 'text' : 'email'}
+                placeholder={mode === 'login' ? 'you@example.com или Astraluser' : 'you@example.com'}
+                autoComplete={mode === 'login' ? 'username' : 'email'}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
               />

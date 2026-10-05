@@ -35,6 +35,8 @@ export type UserRecord = {
   sentRequests: string[];
   purchases: Purchase[];
   licenseKey: string | null;
+  /** 'user' | 'admin' — права внутри панели управления. */
+  role: string;
 };
 
 export type SessionRecord = {
@@ -119,6 +121,7 @@ export function rowToUser(row: Record<string, SqlValue>): UserRecord {
     sentRequests: jsonList(safeParse(row.sent_requests)),
     purchases: jsonPurchases(safeParse(row.purchases)),
     licenseKey: typeof row.license_key === 'string' && row.license_key ? row.license_key : null,
+    role: String(row.role ?? 'user') === 'admin' ? 'admin' : 'user',
   };
 }
 
@@ -153,6 +156,7 @@ const userColumns = [
   'sent_requests',
   'purchases',
   'license_key',
+  'role',
 ];
 
 export async function writeUsers(users: UserRecord[]): Promise<void> {
@@ -183,6 +187,7 @@ export async function writeUsers(users: UserRecord[]): Promise<void> {
       JSON.stringify(user.sentRequests),
       JSON.stringify(user.purchases),
       user.licenseKey,
+      user.role === 'admin' ? 'admin' : 'user',
     ]);
   }
 }
@@ -261,6 +266,34 @@ export async function insertLicenseKey(key: string, productId: string, note = ''
      ON CONFLICT(key) DO UPDATE SET product_id = excluded.product_id, note = excluded.note`,
     [key.trim().toUpperCase(), productId, note, new Date().toISOString()],
   );
+}
+
+/** Меняет роль пользователя ('admin' | 'user'). */
+export async function setUserRole(userId: string, role: string): Promise<void> {
+  await run('UPDATE users SET role = ? WHERE id = ?', [role === 'admin' ? 'admin' : 'user', userId]);
+}
+
+/** Полностью удаляет аккаунт (сессии чистит отдельный вызов deleteSessionsForUser). */
+export async function deleteUserById(userId: string): Promise<void> {
+  await run('DELETE FROM users WHERE id = ?', [userId]);
+}
+
+/** Все лицензионные ключи для панели управления. */
+export async function listLicenseKeys(): Promise<LicenseKeyRecord[]> {
+  const rows = await queryAll('SELECT * FROM license_keys ORDER BY created_at DESC');
+
+  return rows.map((row) => ({
+    key: String(row.key),
+    productId: String(row.product_id ?? ''),
+    note: typeof row.note === 'string' ? row.note : '',
+    usedBy: typeof row.used_by === 'string' && row.used_by ? row.used_by : null,
+    createdAt: String(row.created_at ?? ''),
+  }));
+}
+
+/** Удаляет ключ из базы (панель управления). */
+export async function deleteLicenseKey(key: string): Promise<void> {
+  await run('DELETE FROM license_keys WHERE key = ?', [key.trim().toUpperCase()]);
 }
 
 export async function cleanupExpiredSessions(maxAgeMs: number): Promise<void> {
@@ -347,7 +380,8 @@ CREATE TABLE IF NOT EXISTS users (
   friend_requests TEXT NOT NULL DEFAULT '[]',
   sent_requests TEXT NOT NULL DEFAULT '[]',
   purchases TEXT NOT NULL DEFAULT '[]',
-  license_key TEXT
+  license_key TEXT,
+  role TEXT NOT NULL DEFAULT 'user'
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -380,7 +414,17 @@ CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_codes (email, purpose
 
 export async function initSchema(): Promise<void> {
   await db.executeMultiple(schema);
+  await ensureRoleColumn();
   await migrateLegacyUsersFile();
+}
+
+/** Добавляет колонку role в уже существующую таблицу (игнорирует «колонка уже есть»). */
+async function ensureRoleColumn(): Promise<void> {
+  try {
+    await run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+  } catch {
+    // Колонка уже добавлена — это норма.
+  }
 }
 
 /**
@@ -419,6 +463,7 @@ async function migrateLegacyUsersFile(): Promise<void> {
         sentRequests: jsonList(entry.sentRequests),
         purchases: [],
         licenseKey: null,
+        role: 'user',
       };
     });
 

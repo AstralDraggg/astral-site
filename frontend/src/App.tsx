@@ -8,6 +8,7 @@ import PrivacyPage from './pages/PrivacyPage';
 import AuthPage from './pages/AuthPage';
 import ProfilePage from './pages/ProfilePage';
 import FriendsPage from './pages/FriendsPage';
+import AdminPage from './pages/AdminPage';
 import { SitePayload, fallbackPayload } from './siteData';
 
 function AppRoutes() {
@@ -136,6 +137,7 @@ function AppRoutes() {
         <Route path="/forgot-password" element={<AuthPage mode="forgot" />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/friends" element={<FriendsPage />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

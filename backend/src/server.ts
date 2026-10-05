@@ -8,8 +8,10 @@ import {
   cleanupExpiredSessions,
   claimLicenseKey,
   deleteEmailCodes,
+  deleteLicenseKey,
   deleteSession,
   deleteSessionsForUser,
+  deleteUserById,
   findEmailCode,
   findLicenseKey,
   findUserByEmail,
@@ -17,7 +19,9 @@ import {
   findUserByUsername,
   getSession,
   initSchema,
+  insertLicenseKey,
   isRemoteDb,
+  listLicenseKeys,
   readUsers,
   saveEmailCode,
   saveSession,
@@ -161,6 +165,12 @@ function applyProductToUser(user: UserRecord, product: Product) {
   if (product.id === 'hwid-reset') {
     user.hwidStatus = 'Reset ready';
   }
+}
+
+/** ASTRAL-XXXXXX-XXXXXX — формат лицензионного ключа для панели. */
+function generateLicenseKey(): string {
+  const part = () => randomBytes(3).toString('hex').toUpperCase();
+  return `ASTRAL-${part()}-${part()}`;
 }
 
 // --- passwords ---------------------------------------------------------------
@@ -308,7 +318,41 @@ function sanitizeUser(user: UserRecord) {
     friends: user.friendsList.length,
     licenseKey: user.licenseKey,
     purchases: user.purchases,
+    role: isAdmin(user) ? 'admin' : 'user',
   };
+}
+
+// --- admin --------------------------------------------------------------------
+
+/**
+ * Логины администраторов через переменную окружения (запятая в качестве разделителя).
+ * Работает до того, как у аккаунта появится роль admin в базе.
+ */
+function adminUsernames(): string[] {
+  return (process.env.ADMIN_USERS ?? '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isAdmin(user: UserRecord): boolean {
+  return user.role === 'admin' || adminUsernames().includes(user.username.toLowerCase());
+}
+
+/** Проверяет, что запрос от вошедшего администратора (иначе 401/403). */
+function requireAdmin(request: IncomingMessage, response: ServerResponse): Promise<UserRecord | null> {
+  return requireAuth(request, response).then((user) => {
+    if (!user) {
+      return null;
+    }
+
+    if (!isAdmin(user)) {
+      sendJson(response, 403, { error: 'Нужны права администратора.' });
+      return null;
+    }
+
+    return user;
+  });
 }
 
 // --- helpers -----------------------------------------------------------------
@@ -824,6 +868,7 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         sentRequests: [],
         purchases: [],
         licenseKey: null,
+        role: 'user',
       };
 
       users.push(nextUser);
@@ -848,18 +893,22 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
 
     try {
       const body = await readBody(request);
-      const email = body.email?.trim().toLowerCase() ?? '';
+      // Вход можно делать по юзернейму или по email — что удобнее.
+      const identifier = (body.email ?? body.username ?? body.login ?? '').trim();
       const password = body.password ?? '';
 
-      if (!email || !password) {
-        sendJson(response, 400, { error: 'Введите email и пароль.' });
+      if (!identifier || !password) {
+        sendJson(response, 400, { error: 'Введите юзернейм (или email) и пароль.' });
         return;
       }
 
-      const user = await findUserByEmail(email);
+      const byEmail = identifier.includes('@');
+      const user = byEmail
+        ? (await findUserByEmail(identifier)) ?? (await findUserByUsername(identifier))
+        : (await findUserByUsername(identifier)) ?? (await findUserByEmail(identifier));
 
       if (!user || !verifyPassword(password, user.passwordHash)) {
-        sendJson(response, 401, { error: 'Неверный email или пароль.' });
+        sendJson(response, 401, { error: 'Неверный юзернейм, email или пароль.' });
         return;
       }
 
@@ -1393,6 +1442,236 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
     await writeUsers(users);
     sendJson(response, 200, { message: 'Удалено из друзей' });
     return;
+  }
+
+  // --- admin ------------------------------------------------------------------
+
+  if (url.startsWith('/api/admin/')) {
+    const admin = await requireAdmin(request, response);
+    if (!admin) return;
+
+    // Обзор: цифры для главной вкладки панели.
+    if (request.method === 'GET' && url === '/api/admin/overview') {
+      const users = await readUsers();
+      const keys = await listLicenseKeys();
+      const now = Date.now();
+
+      const recentUsers = [...users]
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .slice(0, 8)
+        .map((entry) => ({ ...sanitizeUser(entry), active: Date.parse(entry.subscriptionTill) > now }));
+
+      sendJson(response, 200, {
+        stats: {
+          users: users.length,
+          admins: users.filter((entry) => isAdmin(entry)).length,
+          activeSubscriptions: users.filter((entry) => Date.parse(entry.subscriptionTill) > now).length,
+          purchases: users.reduce((total, entry) => total + entry.purchases.length, 0),
+          keysTotal: keys.length,
+          keysFree: keys.filter((key) => !key.usedBy).length,
+        },
+        recentUsers,
+        products: payload.products.map((product) => ({
+          id: product.id,
+          name: product.name,
+          duration: product.duration,
+          price: product.price,
+          category: product.category,
+        })),
+      });
+      return;
+    }
+
+    // Список пользователей (+ поиск по нику, email или uid).
+    if (request.method === 'GET' && url === '/api/admin/users') {
+      const query = new URLSearchParams(queryString).get('q')?.trim().toLowerCase() ?? '';
+      const now = Date.now();
+
+      const users = (await readUsers())
+        .filter(
+          (entry) =>
+            !query ||
+            entry.username.toLowerCase().includes(query) ||
+            entry.email.toLowerCase().includes(query) ||
+            String(entry.uid) === query,
+        )
+        .map((entry) => ({
+          ...sanitizeUser(entry),
+          active: Date.parse(entry.subscriptionTill) > now,
+          purchasesCount: entry.purchases.length,
+        }));
+
+      sendJson(response, 200, { users });
+      return;
+    }
+
+    // Изменение пользователя: роль, продление подписки, статус HWID.
+    if (request.method === 'POST' && url === '/api/admin/users/update') {
+      try {
+        const body = await readBody(request);
+        const targetId = body.userId?.trim() ?? '';
+
+        if (!targetId) {
+          sendJson(response, 400, { error: 'Не указан пользователь.' });
+          return;
+        }
+
+        const target = await findUserById(targetId);
+        if (!target) {
+          sendJson(response, 404, { error: 'Пользователь не найден.' });
+          return;
+        }
+
+        const changes: string[] = [];
+
+        if (body.role === 'admin' || body.role === 'user') {
+          if (target.id === admin.id && body.role === 'user') {
+            sendJson(response, 400, { error: 'Нельзя снять роль у самого себя.' });
+            return;
+          }
+
+          target.role = body.role;
+          changes.push(body.role === 'admin' ? 'роль администратора выдана' : 'роль администратора снята');
+        }
+
+        if (body.days) {
+          const days = Number(body.days);
+          if (!Number.isFinite(days) || days < 1 || days > 3650) {
+            sendJson(response, 400, { error: 'Количество дней: от 1 до 3650.' });
+            return;
+          }
+
+          const currentEnd = Date.parse(target.subscriptionTill);
+          const base = Number.isFinite(currentEnd) && currentEnd > Date.now() ? new Date(currentEnd) : new Date();
+          target.subscriptionTill = plusDays(base, days);
+          changes.push(`подписка +${days} дн.`);
+        }
+
+        if (body.hwidStatus) {
+          target.hwidStatus = String(body.hwidStatus).slice(0, 32);
+          changes.push(`HWID: ${target.hwidStatus}`);
+        }
+
+        if (changes.length === 0) {
+          sendJson(response, 400, { error: 'Нечего менять: укажите роль, дни или HWID.' });
+          return;
+        }
+
+        await writeUsers([target]);
+        sendJson(response, 200, { message: changes.join(', '), user: sanitizeUser(target) });
+        return;
+      } catch {
+        sendJson(response, 400, { error: 'Некорректный запрос.' });
+      }
+      return;
+    }
+
+    // Удаление аккаунта (вместе с сессиями и ссылками в списках друзей).
+    if (request.method === 'POST' && url === '/api/admin/users/delete') {
+      try {
+        const body = await readBody(request);
+        const targetId = body.userId?.trim() ?? '';
+
+        if (!targetId) {
+          sendJson(response, 400, { error: 'Не указан пользователь.' });
+          return;
+        }
+
+        const target = await findUserById(targetId);
+        if (!target) {
+          sendJson(response, 404, { error: 'Пользователь не найден.' });
+          return;
+        }
+
+        if (target.id === admin.id) {
+          sendJson(response, 400, { error: 'Нельзя удалить самого себя.' });
+          return;
+        }
+
+        const rest = (await readUsers())
+          .filter((entry) => entry.id !== target.id)
+          .map((entry) => ({
+            ...entry,
+            friendsList: entry.friendsList.filter((id) => id !== target.id),
+            friendRequests: entry.friendRequests.filter((id) => id !== target.id),
+            sentRequests: entry.sentRequests.filter((id) => id !== target.id),
+          }));
+
+        await writeUsers(rest);
+        await deleteUserById(target.id);
+        await deleteSessionsForUser(target.id);
+
+        sendJson(response, 200, { message: `Аккаунт ${target.username} удалён.` });
+        return;
+      } catch {
+        sendJson(response, 400, { error: 'Некорректный запрос.' });
+      }
+      return;
+    }
+
+    // Лицензионные ключи.
+    if (request.method === 'GET' && url === '/api/admin/keys') {
+      const users = await readUsers();
+      const keys = (await listLicenseKeys()).map((key) => ({
+        ...key,
+        usedByUsername: key.usedBy ? (users.find((entry) => entry.id === key.usedBy)?.username ?? null) : null,
+      }));
+
+      sendJson(response, 200, { keys });
+      return;
+    }
+
+    if (request.method === 'POST' && url === '/api/admin/keys') {
+      try {
+        const body = await readBody(request);
+        const productId = body.productId?.trim() ?? '';
+        const note = body.note?.trim() ?? '';
+        const count = Math.max(1, Math.min(50, Math.floor(Number(body.count) || 1)));
+
+        if (!productById(productId)) {
+          sendJson(response, 400, { error: 'Выберите товар.' });
+          return;
+        }
+
+        const created: string[] = [];
+        for (let index = 0; index < count; index += 1) {
+          const key = generateLicenseKey();
+          await insertLicenseKey(key, productId, note);
+          created.push(key);
+        }
+
+        sendJson(response, 201, { keys: created, message: `Создано ключей: ${created.length}` });
+        return;
+      } catch {
+        sendJson(response, 400, { error: 'Некорректный запрос.' });
+      }
+      return;
+    }
+
+    if (request.method === 'POST' && url === '/api/admin/keys/delete') {
+      try {
+        const body = await readBody(request);
+        const key = body.key?.trim() ?? '';
+
+        if (!key) {
+          sendJson(response, 400, { error: 'Не указан ключ.' });
+          return;
+        }
+
+        const record = await findLicenseKey(key);
+        if (!record) {
+          sendJson(response, 404, { error: 'Ключ не найден.' });
+          return;
+        }
+
+        await deleteLicenseKey(record.key);
+        sendJson(response, 200, { message: `Ключ ${record.key} удалён.` });
+        return;
+      } catch {
+        sendJson(response, 400, { error: 'Некорректный запрос.' });
+      }
+      return;
+    }
   }
 
   sendJson(response, 404, { error: 'Не найдено' });

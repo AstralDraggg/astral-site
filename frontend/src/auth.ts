@@ -7,6 +7,7 @@ export type AuthUser = {
   subscriptionTill: string;
   hwidStatus: string;
   friends: number;
+  role?: 'user' | 'admin';
 };
 
 export type AuthResponse = {
