@@ -567,8 +567,24 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
   const rawUrl = request.url ?? '/';
   // Vercel добавляет к URL query вида "?[...path]=health", поэтому
   // маршрутизируем по пути без query, иначе сравнение с '/api/health' не проходит.
-  const url = rawUrl.split('?')[0];
+  const queryIndex = rawUrl.indexOf('?');
+  const pathOnly = queryIndex === -1 ? rawUrl : rawUrl.slice(0, queryIndex);
+  const queryString = queryIndex === -1 ? '' : rawUrl.slice(queryIndex + 1);
+  let url = pathOnly;
+
+  // Глубокие маршруты (/api/auth/login) Vercel не отдаёт функции напрямую —
+  // их переводит rewrite в vercel.json, сохраняя путь в параметре __route.
+  try {
+    const override = new URLSearchParams(queryString).get('__route');
+    if (override) {
+      url = override.startsWith('/') ? override : `/${override}`;
+    }
+  } catch {
+    // query не разобрался — используем путь как есть
+  }
+
   setDiagHeader(response, 'X-Astral-Url', rawUrl);
+  setDiagHeader(response, 'X-Astral-Route', url);
   setDiagHeader(response, 'X-Astral-Method', request.method ?? 'unknown');
   const isApi = url === '/api' || url.startsWith('/api/');
 
