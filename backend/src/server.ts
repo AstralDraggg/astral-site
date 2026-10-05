@@ -564,8 +564,11 @@ function setDiagHeader(response: ServerResponse, name: string, value: string): v
  * Локально поднимается через createServer, на Vercel вызывается из api/.
  */
 export async function nodeHandler(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const url = request.url ?? '/';
-  setDiagHeader(response, 'X-Astral-Url', url);
+  const rawUrl = request.url ?? '/';
+  // Vercel добавляет к URL query вида "?[...path]=health", поэтому
+  // маршрутизируем по пути без query, иначе сравнение с '/api/health' не проходит.
+  const url = rawUrl.split('?')[0];
+  setDiagHeader(response, 'X-Astral-Url', rawUrl);
   setDiagHeader(response, 'X-Astral-Method', request.method ?? 'unknown');
   const isApi = url === '/api' || url.startsWith('/api/');
 
