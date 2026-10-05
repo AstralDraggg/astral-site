@@ -63,15 +63,20 @@ function AuthPage({ mode }: AuthPageProps) {
           },
         });
 
-        if (!response.ok) {
+        // Токен невалиден — только тогда чистим вход; сбой сети не разлогинивает.
+        if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
           return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
         }
 
         const data = (await response.json()) as { user: AuthUser };
         setCurrentUser(data.user);
       } catch {
-        window.localStorage.removeItem(tokenKey);
+        // Оставляем токен: возможно, это временный обрыв связи.
       }
     }
 

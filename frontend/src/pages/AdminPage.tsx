@@ -63,6 +63,8 @@ function AdminPage() {
 
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [retryTick, setRetryTick] = useState(0);
 
   const notify = useCallback((text: string, kind: 'ok' | 'error' = 'ok') => {
     setNotice({ kind, text });
@@ -130,26 +132,34 @@ function AdminPage() {
     }
 
     async function loadUser() {
+      setLoadError('');
+      setLoading(true);
+
       try {
         const response = await fetch('/api/auth/me', { headers: authHeaders() });
 
-        if (!response.ok) {
+        // Токен невалиден — только тогда выкидываем из аккаунта.
+        if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
           setUser(null);
           return;
         }
 
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
         const data = (await response.json()) as { user: AuthUser };
         setUser(data.user);
       } catch {
-        setUser(null);
+        setLoadError('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.');
       } finally {
         setLoading(false);
       }
     }
 
     void loadUser();
-  }, []);
+  }, [retryTick]);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -271,8 +281,23 @@ function AdminPage() {
     }
   }
 
-  if (!loading && !user) {
+  if (!loading && !user && !loadError) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (loadError && !user) {
+    return (
+      <section className="content-panel route-panel">
+        <p className="form-error">{loadError}</p>
+        <button
+          type="button"
+          className="button-primary"
+          onClick={() => setRetryTick((tick) => tick + 1)}
+        >
+          Повторить
+        </button>
+      </section>
+    );
   }
 
   if (loading) {

@@ -51,16 +51,22 @@ function Layout({ transitionStage = 'idle' }: LayoutProps) {
           },
         });
 
-        if (!response.ok) {
+        // Токен невалиден — только тогда выходим из аккаунта.
+        if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
           setCurrentUser(null);
           return;
         }
 
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
         const data = (await response.json()) as { user: AuthUser };
         setCurrentUser(data.user);
       } catch {
-        setCurrentUser(null);
+        // Обрыв связи: оставляем вход и не дёргаем шапку в никуда.
+        setCurrentUser((current) => current);
       }
     }
 

@@ -48,6 +48,8 @@ function ProfilePage() {
   const [launcherMessage, setLauncherMessage] = useState('');
   const [purchases, setPurchases] = useState<PurchaseItem[]>([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     const token = window.localStorage.getItem(tokenKey);
@@ -57,6 +59,9 @@ function ProfilePage() {
     }
 
     async function loadUser() {
+      setLoadError('');
+      setLoading(true);
+
       try {
         const response = await fetch('/api/auth/me', {
           headers: {
@@ -64,11 +69,15 @@ function ProfilePage() {
           },
         });
 
-        if (!response.ok) {
+        // Токен невалиден — только тогда выкидываем из аккаунта.
+        if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
           setUser(null);
-          setLoading(false);
           return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
         }
 
         const data = (await response.json()) as { user: AuthUser };
@@ -81,8 +90,8 @@ function ProfilePage() {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (friendsResponse.ok) {
-            const friendsData = (await friendsResponse.json()) as { friends: any[] };
-            setFriendsCount(friendsData.friends.length);
+            const friendsData = (await friendsResponse.json()) as { friends: { length: number } };
+            setFriendsCount(friendsData.friends?.length ?? 0);
           } else {
             // Fallback to user.friends if API fails
             setFriendsCount(data.user.friends || 0);
@@ -92,15 +101,15 @@ function ProfilePage() {
           setFriendsCount(data.user.friends || 0);
         }
       } catch {
-        window.localStorage.removeItem(tokenKey);
-        setUser(null);
+        // Обрыв связи или падение сервера: сохраняем вход и даём кнопку «Повторить».
+        setLoadError('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.');
       } finally {
         setLoading(false);
       }
     }
 
     void loadUser();
-  }, []);
+  }, [retryTick]);
 
   async function loadPurchases(token: string | null) {
     if (!token) {
@@ -348,8 +357,23 @@ function ProfilePage() {
     }, 200);
   }
 
-  if (!loading && !user) {
+  if (!loading && !user && !loadError) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (loadError && !user) {
+    return (
+      <section className="content-panel route-panel" data-reveal="profile">
+        <p className="form-error">{loadError}</p>
+        <button
+          type="button"
+          className="button-primary"
+          onClick={() => setRetryTick((tick) => tick + 1)}
+        >
+          Повторить
+        </button>
+      </section>
+    );
   }
 
   if (!user) {

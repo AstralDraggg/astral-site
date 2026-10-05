@@ -47,6 +47,13 @@ function AppRoutes() {
 
   useEffect(() => {
     if (location.pathname === displayLocation.pathname) {
+      // Навигация оборвалась посреди анимации (например, кликнули туда-обратно
+      // быстрее 450 мс): без сброса <main> навсегда остаётся с opacity:0 —
+      // страница выглядит пустой.
+      if (transitionStage === 'exit') {
+        setTransitionStage('enter');
+      }
+
       return;
     }
 
@@ -60,7 +67,7 @@ function AppRoutes() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [location, displayLocation.pathname]);
+  }, [location, displayLocation.pathname, transitionStage]);
 
   useEffect(() => {
     if (transitionStage !== 'enter') {
@@ -84,10 +91,6 @@ function AppRoutes() {
       const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]'));
       if (nodes.length === 0) {
         return;
-      }
-
-      for (const node of nodes) {
-        node.classList.remove('reveal-visible');
       }
 
       const activeObserver: IntersectionObserver = new IntersectionObserver(
@@ -124,6 +127,38 @@ function AppRoutes() {
       observer?.disconnect();
     };
   }, [displayLocation.pathname, transitionStage]);
+
+  // Контент подгружается асинхронно (профиль, друзья, админка): новые блоки
+  // с data-reveal появляются ПОСЛЕ того, как наблюдатель выше отработал,
+  // иначе они остаются прозрачными и страница выглядит пустой.
+  useEffect(() => {
+    const reveal = (node: Element) => {
+      if (node instanceof HTMLElement && node.hasAttribute('data-reveal')) {
+        node.classList.add('reveal-visible');
+      }
+
+      node.querySelectorAll<HTMLElement>('[data-reveal]').forEach((child) => {
+        child.classList.add('reveal-visible');
+      });
+    };
+
+    const mutationObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach((node) => {
+          if (node instanceof Element) {
+            reveal(node);
+          }
+        });
+      }
+    });
+
+    const root = document.querySelector('.main-layout') ?? document.body;
+    mutationObserver.observe(root, { childList: true, subtree: true });
+
+    return () => {
+      mutationObserver.disconnect();
+    };
+  }, []);
 
   return (
     <Routes location={displayLocation}>

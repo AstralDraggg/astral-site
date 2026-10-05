@@ -31,6 +31,8 @@ function FriendsPage() {
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [addUsername, setAddUsername] = useState('');
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [retryTick, setRetryTick] = useState(0);
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'pending'>('all');
 
   useEffect(() => {
@@ -41,30 +43,37 @@ function FriendsPage() {
     }
 
     async function loadUser() {
+      setLoadError('');
+      setLoading(true);
+
       try {
         const response = await fetch('/api/auth/me', {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!response.ok) {
+        // Токен невалиден — только тогда выкидываем из аккаунта.
+        if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
           setUser(null);
-          setLoading(false);
           return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
         }
 
         const data = (await response.json()) as { user: AuthUser };
         setUser(data.user);
       } catch {
-        window.localStorage.removeItem(tokenKey);
-        setUser(null);
+        // Обрыв связи: вход сохраняем, страница предложит повторить запрос.
+        setLoadError('Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.');
       } finally {
         setLoading(false);
       }
     }
 
     void loadUser();
-  }, []);
+  }, [retryTick]);
 
   useEffect(() => {
     if (user) {
@@ -206,8 +215,23 @@ function FriendsPage() {
     setTimeout(() => setMessage(''), 3000);
   }
 
-  if (!loading && !user) {
+  if (!loading && !user && !loadError) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (loadError && !user) {
+    return (
+      <section className="content-panel route-panel">
+        <p className="form-error">{loadError}</p>
+        <button
+          type="button"
+          className="button-primary"
+          onClick={() => setRetryTick((tick) => tick + 1)}
+        >
+          Повторить
+        </button>
+      </section>
+    );
   }
 
   if (!user) {
