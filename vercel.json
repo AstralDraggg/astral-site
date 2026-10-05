@@ -4,6 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
+    { "source": "/api", "destination": "/api/health" },
     { "source": "/((?!api/).*)", "destination": "/" }
   ]
 }
