@@ -550,6 +550,15 @@ function describeError(error: unknown): string {
   return parts.join(' → ');
 }
 
+/** Кладёт диагностику в HTTP-заголовок (её можно прочитать извне, без логов). */
+function setDiagHeader(response: ServerResponse, name: string, value: string): void {
+  try {
+    response.setHeader(name, encodeURIComponent(value).slice(0, 500));
+  } catch {
+    // заголовок не критичен
+  }
+}
+
 /**
  * Обработчик запросов в формате node:http.
  * Локально поднимается через createServer, на Vercel вызывается из api/.
@@ -565,10 +574,14 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
       await ensureReady();
     } catch (error) {
       console.error('[astral] init failed:', error);
+      const detail = describeError(error);
       response.setHeader('Access-Control-Allow-Origin', '*');
+      setDiagHeader(response, 'X-Astral-Diag', detail);
+      setDiagHeader(response, 'X-Astral-Db', process.env.TURSO_DATABASE_URL ?? 'missing');
+      setDiagHeader(response, 'X-Astral-Token', process.env.TURSO_AUTH_TOKEN ? 'set' : 'missing');
       sendJson(response, 500, {
         error: 'Инициализация базы данных не удалась.',
-        detail: describeError(error),
+        detail,
         db: isRemoteDb() ? 'turso' : 'file',
       });
       return;
@@ -623,6 +636,9 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         probe = `${describeError(error)} за ${Date.now() - started} мс`;
       }
     }
+
+    setDiagHeader(response, 'X-Astral-Db', process.env.TURSO_DATABASE_URL ?? 'missing');
+    setDiagHeader(response, 'X-Astral-Diag', probe ?? 'no-probe');
 
     sendJson(response, 200, {
       ok: true,
