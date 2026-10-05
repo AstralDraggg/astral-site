@@ -531,6 +531,26 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse) {
 // --- server ------------------------------------------------------------------
 
 /**
+ * Раскрывает цепочку cause у ошибок: у fetch в Node сообщение "fetch failed"
+ * прячет настоящую причину (DNS, таймаут, обрыв) внутри error.cause.
+ */
+function describeError(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+
+  for (let i = 0; current && i < 5; i += 1) {
+    const err = current as { message?: unknown; code?: unknown; cause?: unknown };
+    const message = typeof err.message === 'string' ? err.message : String(current);
+    const code = typeof err.code === 'string' ? ` [${err.code}]` : '';
+    const line = `${message}${code}`;
+    if (!parts.includes(line)) parts.push(line);
+    current = err.cause;
+  }
+
+  return parts.join(' → ');
+}
+
+/**
  * Обработчик запросов в формате node:http.
  * Локально поднимается через createServer, на Vercel вызывается из api/.
  */
@@ -544,10 +564,13 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
     try {
       await ensureReady();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       console.error('[astral] init failed:', error);
       response.setHeader('Access-Control-Allow-Origin', '*');
-      sendJson(response, 500, { error: 'Инициализация базы данных не удалась.', detail: message });
+      sendJson(response, 500, {
+        error: 'Инициализация базы данных не удалась.',
+        detail: describeError(error),
+        db: isRemoteDb() ? 'turso' : 'file',
+      });
       return;
     }
   }
@@ -574,6 +597,50 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
 
   if (request.method === 'GET' && url === '/api/health') {
     sendJson(response, 200, { ok: true, service: 'astral-backend', database: isRemoteDb() ? 'turso' : 'file' });
+    return;
+  }
+
+  // Диагностика: что видит сервер (без значений секретов).
+  if (request.method === 'GET' && url === '/api/diag') {
+    const tursoUrl = process.env.TURSO_DATABASE_URL ?? '';
+    let dbHost: string | null = null;
+
+    try {
+      dbHost = new URL(tursoUrl).host || null;
+    } catch {
+      dbHost = tursoUrl ? `${tursoUrl.slice(0, 60)} (не разбирается как URL)` : null;
+    }
+
+    // Прямая попытка соединиться с хостом базы — показывает реальную причину
+    // (DNS, таймаут, обрыв), если она прячется за "fetch failed".
+    let probe: string | null = null;
+    if (dbHost && !dbHost.includes('не разбирается')) {
+      const started = Date.now();
+      try {
+        const res = await fetch(`https://${dbHost}/`, { signal: AbortSignal.timeout(5000) });
+        probe = `HTTP ${res.status} за ${Date.now() - started} мс`;
+      } catch (error) {
+        probe = `${describeError(error)} за ${Date.now() - started} мс`;
+      }
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      db: isRemoteDb() ? 'turso' : 'file',
+      dbHost,
+      probe,
+      env: {
+        TURSO_DATABASE_URL: tursoUrl ? 'set' : 'missing',
+        TURSO_AUTH_TOKEN: process.env.TURSO_AUTH_TOKEN ? 'set' : 'missing',
+        TOKEN_SECRET: process.env.TOKEN_SECRET ? 'set' : 'missing',
+        SMTP_HOST: process.env.SMTP_HOST ?? null,
+        SMTP_PORT: process.env.SMTP_PORT ?? null,
+        SMTP_USER: process.env.SMTP_USER ? 'set' : 'missing',
+        SMTP_PASS: process.env.SMTP_PASS ? 'set' : 'missing',
+        LAUNCHER_URL: process.env.LAUNCHER_URL ?? null,
+        NODE_ENV: process.env.NODE_ENV ?? null,
+      },
+    });
     return;
   }
 
