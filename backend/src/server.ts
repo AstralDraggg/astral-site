@@ -535,7 +535,22 @@ async function serveStatic(request: IncomingMessage, response: ServerResponse) {
  * Локально поднимается через createServer, на Vercel вызывается из api/.
  */
 export async function nodeHandler(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  await ensureReady();
+  const url = request.url ?? '/';
+  const isApi = url === '/api' || url.startsWith('/api/');
+
+  // Диагностика отвечает даже при упавшей инициализации БД,
+  // иначе причину сбоя видно только в логах хостинга.
+  if (!(isApi && url === '/api/diag')) {
+    try {
+      await ensureReady();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[astral] init failed:', error);
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      sendJson(response, 500, { error: 'Инициализация базы данных не удалась.', detail: message });
+      return;
+    }
+  }
 
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -546,9 +561,6 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
     response.end();
     return;
   }
-
-  const url = request.url ?? '/';
-  const isApi = url === '/api' || url.startsWith('/api/');
 
   if (!isApi) {
     if (request.method === 'GET' || request.method === 'HEAD') {
