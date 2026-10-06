@@ -71,11 +71,14 @@ function HomePage({ payload }: HomePageProps) {
     <div className="home-layout">
       <section className="hero-panel route-panel" data-reveal="hero">
         <div className="hero-copy">
-          <p className="section-kicker">Приватная сборка</p>
-          <h2 className="hero-title">Чистый легит-вайб, злой движок, ноль клоунских визуалов.</h2>
+          <p className="section-kicker">Легит-клиент для Minecraft</p>
+          <h2 className="hero-title">
+            Минималистичный клиент, после которого не банят.
+          </h2>
           <p className="hero-description">
-            Astral — быстрый и аккуратный клиент для тех, кто хочет полезные фичи, а не бардак на
-            экране.
+            Astral — легит-чит для Minecraft. Всё лишнее выкинуто: интерфейс спокойный и приятный,
+            на экране только то, что реально нужно. Проверки на античите клиент обходит сам —
+            просто заходишь и играешь, бан за игру не светит.
           </p>
 
           <div className="hero-actions">
@@ -103,7 +106,7 @@ function HomePage({ payload }: HomePageProps) {
       <section className="content-panel inner-panel" data-reveal="features">
         <div className="section-heading">
           <p className="section-kicker">Возможности</p>
-          <h2>То, что реально важно в игре.</h2>
+          <h2>Почему с ним удобно играть и не банят.</h2>
         </div>
 
         <div className="feature-grid">
@@ -254,9 +257,9 @@ function HomePage({ payload }: HomePageProps) {
           <div className="footer-branding">
             <h3>Astral</h3>
             <p>
-              Только лучшее — с нами!
+              Легит-клиент без лишнего мусора.
               <br />
-              Заходи быстрее!
+              Проверки обойдены — просто играй.
             </p>
           </div>
 

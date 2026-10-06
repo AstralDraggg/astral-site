@@ -59,30 +59,30 @@ type Stat = { label: string; value: string };
 
 const payload: { stats: Stat[]; features: Feature[]; products: Product[] } = {
   stats: [
-    { label: 'Стиль', value: 'Чистый приват' },
+    { label: 'Интерфейс', value: 'Минимализм' },
+    { label: 'Античит', value: 'Обход проверок' },
     { label: 'Модули', value: '70+' },
-    { label: 'Конфиги', value: 'Быстрая смена' },
-    { label: 'Ощущения', value: 'Быстро и чисто' },
+    { label: 'Игра', value: 'Без бана' },
   ],
   features: [
     {
-      title: 'Бой',
-      description: 'Удары чёткие, прицел чистый, а файты идут плавно, а не как клоунада.',
+      title: 'Легит-бой',
+      description: 'Прицел ровный, удары чёткие, файты идут спокойно. Ничего сверхъестественного — просто играешь и всё.',
       icon: 'combat',
     },
     {
-      title: 'Движение',
-      description: 'Скорость, стрейфы и движение ощущаются плавно: не рывками и не странно.',
+      title: 'Обход проверок',
+      description: 'Античит проверяет — и промахивается. Обход заложен прямо в клиент, бан во время игры не светится.',
       icon: 'movement',
     },
     {
-      title: 'Визуал',
-      description: 'HUD и визуал остаются аккуратными, экран не превращается в кашу.',
+      title: 'Минимализм',
+      description: 'Интерфейс лёгкий и приятный: лишнего нет, глаза не устают, на экране только нужное.',
       icon: 'visuals',
     },
     {
       title: 'Конфиги',
-      description: 'Быстро меняй сборки и сохраняй свои настройки, не собирая всё с нуля.',
+      description: 'Настройки сохраняешь один раз, дальше просто переключаешься. Собирать всё с нуля не надо.',
       icon: 'configs',
     },
   ],
@@ -93,9 +93,9 @@ const payload: { stats: Stat[]; features: Feature[]; products: Product[] } = {
       price: '389₽',
       duration: '/ 30 дней',
       badge: 'Нас выбирают 5 000 игроков',
-      description: 'Стартовый доступ, если просто хочешь зайти и играть.',
+      description: 'Стартовый доступ: поставил, настроил и спокойно играешь.',
       category: 'subscription',
-      features: ['25+ визуальных функций', 'Быстрые модули', 'Поддержка 24/7', 'Частые обновления клиента'],
+      features: ['70+ модулей', 'Обход проверок', 'Минималистичный HUD', 'Поддержка 24/7'],
     },
     {
       id: 'sub-90',
@@ -103,9 +103,9 @@ const payload: { stats: Stat[]; features: Feature[]; products: Product[] } = {
       price: '689₽',
       duration: '/ 90 дней',
       badge: 'Нас выбирают 5 000 игроков',
-      description: 'Лучший вариант посередине, если играешь много и хочешь всё и сразу.',
+      description: 'Середина: играешь много и хочешь всё и сразу.',
       category: 'subscription',
-      features: ['25+ визуальных функций', 'Быстрые модули', 'Поддержка 24/7', 'Частые обновления клиента'],
+      features: ['70+ модулей', 'Обход проверок', 'Минималистичный HUD', 'Поддержка 24/7'],
     },
     {
       id: 'sub-999',
@@ -115,7 +115,7 @@ const payload: { stats: Stat[]; features: Feature[]; products: Product[] } = {
       badge: 'Нас выбирают 5 000 игроков',
       description: 'Долгий вариант. Купил один раз и больше не думаешь.',
       category: 'subscription',
-      features: ['25+ визуальных функций', 'Быстрые модули', 'Поддержка 24/7', 'Частые обновления клиента'],
+      features: ['70+ модулей', 'Обход проверок', 'Минималистичный HUD', 'Поддержка 24/7'],
     },
     {
       id: 'hwid-reset',
@@ -1646,7 +1646,7 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
           changes.push(body.role === 'admin' ? 'роль администратора выдана' : 'роль администратора снята');
         }
 
-        if (body.days) {
+        if (body.days !== undefined && body.days !== null && body.days !== '') {
           const days = Number(body.days);
           if (!Number.isFinite(days) || days < 1 || days > 3650) {
             sendJson(response, 400, { error: 'Количество дней: от 1 до 3650.' });

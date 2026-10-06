@@ -55,6 +55,8 @@ function AdminPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [keys, setKeys] = useState<AdminKey[]>([]);
+  // сколько дней выдать: значение инвода подписки у каждого пользователя
+  const [daysByUser, setDaysByUser] = useState<Record<string, string>>({});
 
   const [search, setSearch] = useState('');
   const [keyProduct, setKeyProduct] = useState('');
@@ -192,6 +194,19 @@ function AdminPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Выдача подписки на то число дней, которое выбрал админ. */
+  async function grantDays(entry: AdminUser) {
+    const raw = (daysByUser[entry.id] ?? '').trim() || '30';
+    const days = Number(raw);
+
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      notify('Количество дней: от 1 до 3650', 'error');
+      return;
+    }
+
+    await updateUser(entry.id, { days });
   }
 
   async function toggleBlock(entry: AdminUser) {
@@ -484,14 +499,32 @@ function AdminPage() {
                     >
                       {entry.role === 'admin' ? 'Снять админа' : 'Сделать админом'}
                     </button>
-                    <button
-                      type="button"
-                      className="admin-action"
-                      disabled={busy}
-                      onClick={() => void updateUser(entry.id, { days: 30 })}
-                    >
-                      +30 дней
-                    </button>
+                    <div className="admin-days">
+                      <input
+                        className="admin-days-input"
+                        type="number"
+                        min={1}
+                        max={3650}
+                        inputMode="numeric"
+                        value={daysByUser[entry.id] ?? '30'}
+                        onChange={(event) =>
+                          setDaysByUser((prev) => ({ ...prev, [entry.id]: event.target.value }))
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') void grantDays(entry);
+                        }}
+                        aria-label="Сколько дней выдать"
+                      />
+                      <button
+                        type="button"
+                        className="admin-action"
+                        disabled={busy}
+                        title="Выдать подписку на указанное число дней"
+                        onClick={() => void grantDays(entry)}
+                      >
+                        Выдать подписку
+                      </button>
+                    </div>
                     <button
                       type="button"
                       className="admin-action"
