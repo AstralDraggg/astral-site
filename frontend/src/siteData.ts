@@ -20,7 +20,7 @@ export type SitePayload = {
 export const fallbackPayload: SitePayload = {
   stats: [
     { label: 'Интерфейс', value: 'Минимализм' },
-    { label: 'Проверки', value: 'Не находят' },
+    { label: 'Проверки', value: 'Обходит' },
     { label: 'Модули', value: '70+' },
     { label: 'Игра', value: 'Без бана' },
   ],

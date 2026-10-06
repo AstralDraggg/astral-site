@@ -60,7 +60,7 @@ type Stat = { label: string; value: string };
 const payload: { stats: Stat[]; features: Feature[]; products: Product[] } = {
   stats: [
     { label: 'Интерфейс', value: 'Минимализм' },
-    { label: 'Проверки', value: 'Не находят' },
+    { label: 'Проверки', value: 'Обходит' },
     { label: 'Модули', value: '70+' },
     { label: 'Игра', value: 'Без бана' },
   ],
