@@ -140,10 +140,28 @@ function AppRoutes() {
       node.querySelectorAll<HTMLElement>('[data-reveal]').forEach((child) => {
         child.classList.add('reveal-visible');
       });
+
+      // Родительские блоки тоже: секция профиля/друзей/админки первой получает
+      // data-reveal (React переиспользует <section> из состояния загрузки), а её
+      // содержимое добавляется позже — без этого корень остаётся с opacity:0.
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+        if (parent.hasAttribute('data-reveal')) {
+          parent.classList.add('reveal-visible');
+        }
+      }
     };
 
     const mutationObserver = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
+        // data-reveal может появиться атрибутом на уже существующем узле —
+        // такие мутации не попадают в childList.
+        if (mutation.type === 'attributes') {
+          if (mutation.target instanceof Element) {
+            reveal(mutation.target);
+          }
+          continue;
+        }
+
         mutation.addedNodes.forEach((node) => {
           if (node instanceof Element) {
             reveal(node);
@@ -153,7 +171,12 @@ function AppRoutes() {
     });
 
     const root = document.querySelector('.main-layout') ?? document.body;
-    mutationObserver.observe(root, { childList: true, subtree: true });
+    mutationObserver.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-reveal'],
+    });
 
     return () => {
       mutationObserver.disconnect();

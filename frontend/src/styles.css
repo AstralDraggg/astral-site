@@ -8150,6 +8150,33 @@ body {
 .admin-status.is-active { color: var(--accent-strong); background: rgba(132, 247, 175, 0.12); }
 .admin-status.is-expired { color: var(--danger); background: rgba(255, 130, 130, 0.1); }
 
+.admin-badge.is-blocked {
+  background: rgba(255, 130, 130, 0.16);
+  color: var(--danger);
+  border-color: rgba(255, 130, 130, 0.35);
+}
+
+/* Баннер блокировки в профиле */
+.profile-blocked-banner {
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--danger);
+  background: rgba(255, 130, 130, 0.1);
+  border: 1px solid rgba(255, 130, 130, 0.35);
+}
+
+/* Заблокированный аккаунт: контролы редактирования неактивны */
+.profile-settings-input:disabled,
+.profile-settings-button:disabled,
+.profile-activate:disabled,
+.profile-license-input input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .admin-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .admin-action {
   padding: 8px 12px; border-radius: 10px; font-size: 13px; cursor: pointer;

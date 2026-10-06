@@ -13,6 +13,7 @@ import {
   deleteSessionsForUser,
   deleteUserById,
   findEmailCode,
+  findBlockedIp,
   findLicenseKey,
   findUserByEmail,
   findUserById,
@@ -23,9 +24,11 @@ import {
   isRemoteDb,
   listLicenseKeys,
   readUsers,
+  recordUserIp,
   saveEmailCode,
   saveSession,
   setCodeAttempts,
+  setUserBlocked,
   writeUsers,
   type EmailCodeRecord,
   type Purchase,
@@ -319,6 +322,9 @@ function sanitizeUser(user: UserRecord) {
     licenseKey: user.licenseKey,
     purchases: user.purchases,
     role: isAdmin(user) ? 'admin' : 'user',
+    blocked: user.blocked,
+    blockedAt: user.blockedAt,
+    lastIp: user.lastIp,
   };
 }
 
@@ -341,8 +347,11 @@ function isAdmin(user: UserRecord): boolean {
 
 /** Проверяет, что запрос от вошедшего администратора (иначе 401/403). */
 function requireAdmin(request: IncomingMessage, response: ServerResponse): Promise<UserRecord | null> {
-  return requireAuth(request, response).then((user) => {
+  // Намеренно через authenticate: администратор должен зайти в панель,
+  // чтобы снять блокировку, даже если его аккаунт помечен заблокированным.
+  return authenticate(request).then((user) => {
     if (!user) {
+      sendJson(response, 401, { error: 'Нет доступа.' });
       return null;
     }
 
@@ -384,10 +393,15 @@ async function readBody(request: IncomingMessage): Promise<Record<string, string
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function clientKey(request: IncomingMessage, scope: string): string {
+  return `${scope}:${clientIp(request)}`;
+}
+
+/** IP клиента: учитывает X-Forwarded-For от прокси/Vercel. */
+function clientIp(request: IncomingMessage): string | null {
   const forwarded = request.headers['x-forwarded-for'];
   const forwardedIp = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
-  const ip = forwardedIp || request.socket?.remoteAddress || 'unknown';
-  return `${scope}:${ip}`;
+  const ip = forwardedIp || request.socket?.remoteAddress || '';
+  return ip || null;
 }
 
 function rateLimit(request: IncomingMessage, scope: string, limit = 30, windowMs = 60_000): boolean {
@@ -408,6 +422,12 @@ function requireAuth(request: IncomingMessage, response: ServerResponse): Promis
   return authenticate(request).then((user) => {
     if (!user) {
       sendJson(response, 401, { error: 'Нет доступа.' });
+      return null;
+    }
+
+    // Заблокированный аккаунт видит свой профиль, но менять ничего не может.
+    if (user.blocked) {
+      sendJson(response, 403, { error: 'Аккаунт заблокирован администратором.', blocked: true });
       return null;
     }
 
@@ -780,6 +800,12 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         return;
       }
 
+      // Новый аккаунт с IP забаненного пользователя не создаётся.
+      if (await findBlockedIp(clientIp(request))) {
+        sendJson(response, 403, { error: 'Доступ с вашего IP-адреса ограничен.', blocked: true });
+        return;
+      }
+
       // Аккаунт создаётся только после подтверждения кода из письма.
       const issued = await issueEmailCode(
         email,
@@ -869,6 +895,9 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         purchases: [],
         licenseKey: null,
         role: 'user',
+        blocked: false,
+        lastIp: clientIp(request),
+        blockedAt: null,
       };
 
       users.push(nextUser);
@@ -912,6 +941,29 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         return;
       }
 
+      const ip = clientIp(request);
+      // Администратор проходит всегда — иначе нельзя снять блокировку с панели.
+      if (!isAdmin(user)) {
+        if (user.blocked) {
+          sendJson(response, 403, {
+            error: 'Аккаунт заблокирован администратором.',
+            blocked: true,
+          });
+          return;
+        }
+
+        // Блокировка по IP: тот же адрес, с которого заходил забаненный аккаунт.
+        const blockedBy = await findBlockedIp(ip);
+        if (blockedBy) {
+          sendJson(response, 403, {
+            error: 'Доступ с вашего IP-адреса ограничен.',
+            blocked: true,
+          });
+          return;
+        }
+      }
+
+      await recordUserIp(user.id, ip);
       const token = await createSession(user.id);
       sendJson(response, 200, { token, user: sanitizeUser(user) });
       return;
@@ -1500,7 +1552,6 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
           active: Date.parse(entry.subscriptionTill) > now,
           purchasesCount: entry.purchases.length,
         }));
-
       sendJson(response, 200, { users });
       return;
     }
@@ -1523,6 +1574,28 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         }
 
         const changes: string[] = [];
+
+        // Блокировка: подписка снимается, сессии растугиваются, IP уходит в бан.
+        if (body.blocked === 'true' || body.blocked === 'false') {
+          const shouldBlock = body.blocked === 'true';
+
+          if (target.id === admin.id && shouldBlock) {
+            sendJson(response, 400, { error: 'Нельзя заблокировать самого себя.' });
+            return;
+          }
+
+          await setUserBlocked(target.id, shouldBlock);
+          target.blocked = shouldBlock;
+          target.blockedAt = shouldBlock ? new Date().toISOString() : null;
+
+          if (shouldBlock) {
+            target.subscriptionTill = new Date().toISOString();
+            await deleteSessionsForUser(target.id);
+            changes.push(`аккаунт заблокирован${target.lastIp ? `, IP ${target.lastIp} в бане` : ''}`);
+          } else {
+            changes.push('блокировка снята');
+          }
+        }
 
         if (body.role === 'admin' || body.role === 'user') {
           if (target.id === admin.id && body.role === 'user') {
@@ -1553,7 +1626,9 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         }
 
         if (changes.length === 0) {
-          sendJson(response, 400, { error: 'Нечего менять: укажите роль, дни или HWID.' });
+          sendJson(response, 400, {
+            error: 'Нечего менять: укажите роль, дни, HWID или блокировку.',
+          });
           return;
         }
 

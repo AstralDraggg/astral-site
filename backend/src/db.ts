@@ -37,6 +37,12 @@ export type UserRecord = {
   licenseKey: string | null;
   /** 'user' | 'admin' — права внутри панели управления. */
   role: string;
+  /** Аккаунт заблокирован администратором: вход и редактирование запрещены. */
+  blocked: boolean;
+  /** Последний IP, с которого заходил пользователь (для блокировки по IP). */
+  lastIp: string | null;
+  /** Когда выставили блокировку (null, если блокировки нет). */
+  blockedAt: string | null;
 };
 
 export type SessionRecord = {
@@ -122,6 +128,9 @@ export function rowToUser(row: Record<string, SqlValue>): UserRecord {
     purchases: jsonPurchases(safeParse(row.purchases)),
     licenseKey: typeof row.license_key === 'string' && row.license_key ? row.license_key : null,
     role: String(row.role ?? 'user') === 'admin' ? 'admin' : 'user',
+    blocked: Number(row.blocked ?? 0) === 1,
+    lastIp: typeof row.last_ip === 'string' && row.last_ip ? row.last_ip : null,
+    blockedAt: typeof row.blocked_at === 'string' && row.blocked_at ? row.blocked_at : null,
   };
 }
 
@@ -157,6 +166,9 @@ const userColumns = [
   'purchases',
   'license_key',
   'role',
+  'blocked',
+  'last_ip',
+  'blocked_at',
 ];
 
 export async function writeUsers(users: UserRecord[]): Promise<void> {
@@ -188,6 +200,9 @@ export async function writeUsers(users: UserRecord[]): Promise<void> {
       JSON.stringify(user.purchases),
       user.licenseKey,
       user.role === 'admin' ? 'admin' : 'user',
+      user.blocked ? 1 : 0,
+      user.lastIp,
+      user.blockedAt,
     ]);
   }
 }
@@ -271,6 +286,41 @@ export async function insertLicenseKey(key: string, productId: string, note = ''
 /** Меняет роль пользователя ('admin' | 'user'). */
 export async function setUserRole(userId: string, role: string): Promise<void> {
   await run('UPDATE users SET role = ? WHERE id = ?', [role === 'admin' ? 'admin' : 'user', userId]);
+}
+
+/** Ставит или снимает блокировку аккаунта (IP пользователя при этом остаётся в last_ip). */
+export async function setUserBlocked(userId: string, blocked: boolean): Promise<void> {
+  await run('UPDATE users SET blocked = ?, blocked_at = ? WHERE id = ?', [
+    blocked ? 1 : 0,
+    blocked ? new Date().toISOString() : null,
+    userId,
+  ]);
+}
+
+/** Запоминает IP, с которого пользователь зашёл (нужен для блокировки по IP). */
+export async function recordUserIp(userId: string, ip: string | null): Promise<void> {
+  if (!ip) {
+    return;
+  }
+
+  await run('UPDATE users SET last_ip = ? WHERE id = ?', [ip, userId]);
+}
+
+/**
+ * Заблокирован ли IP: он числится у заблокированного аккаунта.
+ * Возвращает username, чей блок сработал, — удобно для сообщения об ошибке.
+ */
+export async function findBlockedIp(ip: string | null): Promise<string | null> {
+  if (!ip) {
+    return null;
+  }
+
+  const row = await queryOne(
+    'SELECT username FROM users WHERE blocked = 1 AND last_ip = ? ORDER BY blocked_at DESC LIMIT 1',
+    [ip],
+  );
+
+  return row ? String(row.username ?? '') : null;
 }
 
 /** Полностью удаляет аккаунт (сессии чистит отдельный вызов deleteSessionsForUser). */
@@ -381,7 +431,10 @@ CREATE TABLE IF NOT EXISTS users (
   sent_requests TEXT NOT NULL DEFAULT '[]',
   purchases TEXT NOT NULL DEFAULT '[]',
   license_key TEXT,
-  role TEXT NOT NULL DEFAULT 'user'
+  role TEXT NOT NULL DEFAULT 'user',
+  blocked INTEGER NOT NULL DEFAULT 0,
+  last_ip TEXT,
+  blocked_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -415,6 +468,7 @@ CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_codes (email, purpose
 export async function initSchema(): Promise<void> {
   await db.executeMultiple(schema);
   await ensureRoleColumn();
+  await ensureBlockColumns();
   await migrateLegacyUsersFile();
 }
 
@@ -424,6 +478,26 @@ async function ensureRoleColumn(): Promise<void> {
     await run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
   } catch {
     // Колонка уже добавлена — это норма.
+  }
+}
+
+/**
+ * Колонки блокировки добавляются в базы, созданные до этой фичи:
+ * ALTER TABLE с уже существующей колонкой падает, поэтому каждый шаг свой.
+ */
+async function ensureBlockColumns(): Promise<void> {
+  const columns: Array<[string, string]> = [
+    ['blocked', 'INTEGER NOT NULL DEFAULT 0'],
+    ['last_ip', 'TEXT'],
+    ['blocked_at', 'TEXT'],
+  ];
+
+  for (const [name, definition] of columns) {
+    try {
+      await run(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
+    } catch {
+      // Колонка уже есть — это норма.
+    }
   }
 }
 
@@ -464,6 +538,9 @@ async function migrateLegacyUsersFile(): Promise<void> {
         purchases: [],
         licenseKey: null,
         role: 'user',
+        blocked: false,
+        lastIp: null,
+        blockedAt: null,
       };
     });
 

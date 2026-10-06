@@ -380,8 +380,16 @@ function ProfilePage() {
     return <section className="content-panel route-panel">Loading profile...</section>;
   }
 
+  const isBlocked = Boolean(user.blocked);
+
   return (
     <section className="profile-shell route-panel profile-route" data-reveal="profile">
+      {isBlocked && (
+        <div className="profile-blocked-banner" role="alert">
+          Аккаунт заблокирован администратором. Редактирование профиля недоступно, подписка
+          отключена.
+        </div>
+      )}
       <div className="profile-grid">
         <div className="profile-left">
           <article className="profile-user-card profile-panel" data-reveal="card">
@@ -412,10 +420,16 @@ function ProfilePage() {
                   type="text"
                   placeholder="Enter key..."
                   value={licenseKey}
+                  disabled={isBlocked}
                   onChange={(event) => setLicenseKey(event.target.value)}
                 />
               </label>
-              <button type="button" className="profile-activate" onClick={handleActivateKey}>
+              <button
+                type="button"
+                className="profile-activate"
+                disabled={isBlocked}
+                onClick={handleActivateKey}
+              >
                 <img src={closeIcon} alt="" aria-hidden="true" className="mini-icon" />
                 Activate
               </button>
@@ -557,10 +571,16 @@ function ProfilePage() {
                       className="profile-settings-input"
                       placeholder="Enter new email..."
                       value={newEmail}
+                      disabled={isBlocked}
                       onChange={(e) => setNewEmail(e.target.value)}
                     />
                   </div>
-                  <button type="button" className="profile-settings-button" onClick={handleEmailChange}>
+                  <button
+                    type="button"
+                    className="profile-settings-button"
+                    disabled={isBlocked}
+                    onClick={handleEmailChange}
+                  >
                     <img src={updateIcon} alt="" aria-hidden="true" className="mini-icon" />
                     Update Email
                   </button>
@@ -574,6 +594,7 @@ function ProfilePage() {
                       className="profile-settings-input"
                       placeholder="Enter new password..."
                       value={newPassword}
+                      disabled={isBlocked}
                       onChange={(e) => setNewPassword(e.target.value)}
                     />
                   </div>
@@ -587,10 +608,16 @@ function ProfilePage() {
                       className="profile-settings-input"
                       placeholder="Confirm new password..."
                       value={confirmPassword}
+                      disabled={isBlocked}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                     />
                   </div>
-                  <button type="button" className="profile-settings-button" onClick={handlePasswordChange}>
+                  <button
+                    type="button"
+                    className="profile-settings-button"
+                    disabled={isBlocked}
+                    onClick={handlePasswordChange}
+                  >
                     <img src={updateIcon} alt="" aria-hidden="true" className="mini-icon" />
                     Update Password
                   </button>

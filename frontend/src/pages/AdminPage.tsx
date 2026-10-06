@@ -16,6 +16,7 @@ type AdminStats = {
 type AdminUser = AuthUser & {
   active: boolean;
   purchasesCount?: number;
+  lastIp?: string | null;
 };
 
 type AdminKey = {
@@ -181,6 +182,37 @@ function AdminPage() {
 
       if (!response.ok) {
         notify(data.error ?? 'Не удалось обновить пользователя', 'error');
+        return;
+      }
+
+      notify(data.message ?? 'Готово');
+      await Promise.all([loadUsers(search), loadOverview()]);
+    } catch {
+      notify('Сервер не отвечает', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleBlock(entry: AdminUser) {
+    const block = !entry.blocked;
+    const action = block ? 'Заблокировать' : 'Снять блокировку';
+
+    if (!window.confirm(`${action} ${entry.username}?${block ? ' Подписка будет снята, IP уйдёт в бан.' : ''}`)) {
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const response = await fetch('/api/admin/users/update', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ userId: entry.id, blocked: block ? 'true' : 'false' }),
+      });
+      const data = (await response.json()) as { message?: string; error?: string };
+
+      if (!response.ok) {
+        notify(data.error ?? 'Не удалось изменить блокировку', 'error');
         return;
       }
 
@@ -430,6 +462,7 @@ function AdminPage() {
                       <p className="admin-row-title">
                         {entry.username}
                         <span className="admin-badge">{entry.role === 'admin' ? 'админ' : 'юзер'}</span>
+                        {entry.blocked && <span className="admin-badge is-blocked">заблокирован</span>}
                         <span className={`admin-status ${entry.active ? 'is-active' : 'is-expired'}`}>
                           {entry.active ? 'активна' : 'истекла'}
                         </span>
@@ -437,6 +470,7 @@ function AdminPage() {
                       <p className="admin-row-sub">
                         {entry.email} · #{entry.uid} · подписка до {formatDate(entry.subscriptionTill)} · покупок:{' '}
                         {entry.purchasesCount ?? 0}
+                        {entry.lastIp ? ` · IP ${entry.lastIp}` : ''}
                       </p>
                     </div>
                   </div>
@@ -465,6 +499,14 @@ function AdminPage() {
                       onClick={() => void updateUser(entry.id, { hwidStatus: 'Reset ready' })}
                     >
                       Сброс HWID
+                    </button>
+                    <button
+                      type="button"
+                      className={`admin-action${entry.blocked ? '' : ' is-danger'}`}
+                      disabled={busy || entry.id === user.id}
+                      onClick={() => void toggleBlock(entry)}
+                    >
+                      {entry.blocked ? 'Разблокировать' : 'Заблокировать'}
                     </button>
                     <button
                       type="button"

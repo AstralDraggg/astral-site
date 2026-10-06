@@ -8,6 +8,10 @@ export type AuthUser = {
   hwidStatus: string;
   friends: number;
   role?: 'user' | 'admin';
+  /** Аккаунт заблокирован администратором. */
+  blocked?: boolean;
+  blockedAt?: string | null;
+  lastIp?: string | null;
 };
 
 export type AuthResponse = {
