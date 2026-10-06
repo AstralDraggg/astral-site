@@ -30,6 +30,8 @@ export type UserRecord = {
   createdAt: string;
   subscriptionTill: string;
   hwidStatus: string;
+  /** HWID машины, с которой заходил лоадер (привязка аккаунта к железу). */
+  hwid: string | null;
   friendsList: string[];
   friendRequests: string[];
   sentRequests: string[];
@@ -122,6 +124,7 @@ export function rowToUser(row: Record<string, SqlValue>): UserRecord {
     createdAt,
     subscriptionTill: typeof row.subscription_till === 'string' ? row.subscription_till : createdAt,
     hwidStatus: String(row.hwid_status ?? 'Linked'),
+    hwid: typeof row.hwid === 'string' && row.hwid ? row.hwid : null,
     friendsList: jsonList(safeParse(row.friends_list)),
     friendRequests: jsonList(safeParse(row.friend_requests)),
     sentRequests: jsonList(safeParse(row.sent_requests)),
@@ -160,6 +163,7 @@ const userColumns = [
   'created_at',
   'subscription_till',
   'hwid_status',
+  'hwid',
   'friends_list',
   'friend_requests',
   'sent_requests',
@@ -194,6 +198,7 @@ export async function writeUsers(users: UserRecord[]): Promise<void> {
       user.createdAt,
       user.subscriptionTill,
       user.hwidStatus,
+      user.hwid,
       JSON.stringify(user.friendsList),
       JSON.stringify(user.friendRequests),
       JSON.stringify(user.sentRequests),
@@ -426,6 +431,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL,
   subscription_till TEXT NOT NULL,
   hwid_status TEXT NOT NULL,
+  hwid TEXT,
   friends_list TEXT NOT NULL DEFAULT '[]',
   friend_requests TEXT NOT NULL DEFAULT '[]',
   sent_requests TEXT NOT NULL DEFAULT '[]',
@@ -468,7 +474,7 @@ CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_codes (email, purpose
 export async function initSchema(): Promise<void> {
   await db.executeMultiple(schema);
   await ensureRoleColumn();
-  await ensureBlockColumns();
+  await ensureUserColumns();
   await migrateLegacyUsersFile();
 }
 
@@ -482,14 +488,15 @@ async function ensureRoleColumn(): Promise<void> {
 }
 
 /**
- * Колонки блокировки добавляются в базы, созданные до этой фичи:
+ * Колонки, добавленные после создания таблицы, достраиваются в базы постфактум:
  * ALTER TABLE с уже существующей колонкой падает, поэтому каждый шаг свой.
  */
-async function ensureBlockColumns(): Promise<void> {
+async function ensureUserColumns(): Promise<void> {
   const columns: Array<[string, string]> = [
     ['blocked', 'INTEGER NOT NULL DEFAULT 0'],
     ['last_ip', 'TEXT'],
     ['blocked_at', 'TEXT'],
+    ['hwid', 'TEXT'],
   ];
 
   for (const [name, definition] of columns) {
@@ -532,6 +539,7 @@ async function migrateLegacyUsersFile(): Promise<void> {
         createdAt,
         subscriptionTill: String(entry.subscriptionTill ?? createdAt),
         hwidStatus: String(entry.hwidStatus ?? 'Linked'),
+        hwid: typeof entry.hwid === 'string' && entry.hwid ? entry.hwid : null,
         friendsList: jsonList(entry.friendsList),
         friendRequests: jsonList(entry.friendRequests),
         sentRequests: jsonList(entry.sentRequests),

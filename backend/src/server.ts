@@ -146,7 +146,8 @@ function productById(productId: string): Product | null {
 }
 
 function subscriptionDays(product: Product): number {
-  const match = /(\d+)\s*days/i.exec(product.duration);
+  // duration пишется по-русски ('/ 30 дней') — ловим и русские, и английские единицы.
+  const match = /(\d+)\s*(?:days?|дней|дня|день|дн)/i.exec(product.duration);
   return match ? Number(match[1]) : 0;
 }
 
@@ -318,6 +319,7 @@ function sanitizeUser(user: UserRecord) {
     createdAt: user.createdAt,
     subscriptionTill: user.subscriptionTill,
     hwidStatus: user.hwidStatus,
+    hwid: user.hwid,
     friends: user.friendsList.length,
     licenseKey: user.licenseKey,
     purchases: user.purchases,
@@ -889,6 +891,7 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
         createdAt: now.toISOString(),
         subscriptionTill: plusDays(now, 30),
         hwidStatus: 'Linked',
+        hwid: null,
         friendsList: [],
         friendRequests: [],
         sentRequests: [],
@@ -1228,8 +1231,44 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
     await writeUsers([user]);
 
     sendJson(response, 200, {
-      message: product ? `Ключ принят: ${product.name}.` : 'Ключ принят.',
+      message: product
+        ? `Ключ принят: ${product.name}${product.duration ? ` ${product.duration.replace('/', '').trim()}` : ''}.`
+        : 'Ключ принят.',
       product: product ? { id: product.id, name: product.name } : null,
+      user: sanitizeUser(user),
+    });
+    return;
+  }
+
+  // --- hwid --------------------------------------------------------------------
+
+  /**
+   * Лоадер привязывает HWID машины к аккаунту: старая привязка снимается,
+   * статус возвращается в 'Linked' (купленный сброс при этом погашается).
+   */
+  if (request.method === 'POST' && url === '/api/hwid/reset') {
+    const user = await requireAuth(request, response);
+    if (!user) return;
+
+    const body = await readBody(request);
+    const hwid = String(body.hwid ?? '').trim().toUpperCase().slice(0, 32);
+
+    if (!/^[A-Z0-9-]{4,32}$/.test(hwid)) {
+      sendJson(response, 400, { error: 'Некорректный HWID.' });
+      return;
+    }
+
+    user.hwid = hwid;
+    // 'Reset ready' означает купленный сброс — он погашается при новой привязке.
+    if (user.hwidStatus === 'Reset ready') {
+      user.hwidStatus = 'Linked';
+    }
+    await writeUsers([user]);
+
+    sendJson(response, 200, {
+      ok: true,
+      hwid,
+      hwidStatus: user.hwidStatus,
       user: sanitizeUser(user),
     });
     return;
