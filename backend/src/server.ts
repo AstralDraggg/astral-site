@@ -66,7 +66,7 @@ const payload: { stats: Stat[]; features: Feature[]; products: Product[] } = {
   ],
   features: [
     {
-      title: 'Легит-бой',
+      title: 'Легит',
       description: 'Прицел ровный, удары чёткие, файты идут спокойно. Ничего сверхъестественного — просто играешь и всё.',
       icon: 'combat',
     },
@@ -77,7 +77,7 @@ const payload: { stats: Stat[]; features: Feature[]; products: Product[] } = {
     },
     {
       title: 'Минимализм',
-      description: 'Интерфейс лёгкий и приятный: лишнего нет, глаза не устают, на экране только нужное.',
+      description: 'Интерфейс лёгкий и приятный: лишнего нет.',
       icon: 'visuals',
     },
     {
