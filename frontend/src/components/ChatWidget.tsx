@@ -248,22 +248,30 @@ function ChatWidget({ currentUser }: Props) {
     });
   }
 
+  /** Пролистывает ленту к сообщению и подсвечивает его. */
+  function scrollToMessage(id: number, attempt = 0) {
+    const node = listRef.current;
+    const target = node?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
+    if (!node || !target) {
+      // Панель могла только что открыться — пробуем ещё пару раз.
+      if (attempt < 10) {
+        window.setTimeout(() => scrollToMessage(id, attempt + 1), 50);
+      }
+      return;
+    }
+
+    node.scrollTop = target.offsetTop - node.clientHeight / 2 + target.offsetHeight / 2;
+    setFlashId(id);
+    window.setTimeout(() => setFlashId(null), 1800);
+  }
+
   function jumpToMention() {
     if (lastMentionId === null) {
       return;
     }
 
     setOpen(true);
-    window.requestAnimationFrame(() => {
-      const node = listRef.current;
-      const target = node?.querySelector<HTMLElement>(`[data-msg-id="${lastMentionId}"]`);
-      if (!node || !target) {
-        return;
-      }
-      node.scrollTop = target.offsetTop - node.clientHeight / 2 + target.offsetHeight / 2;
-      setFlashId(lastMentionId);
-      window.setTimeout(() => setFlashId(null), 1800);
-    });
+    scrollToMessage(lastMentionId);
   }
 
   async function send() {
@@ -300,12 +308,10 @@ function ChatWidget({ currentUser }: Props) {
       markRead(message.id);
       setDraft('');
 
-      window.requestAnimationFrame(() => {
-        const node = listRef.current;
-        if (node) {
-          node.scrollTop = node.scrollHeight;
-        }
-      });
+      const node = listRef.current;
+      if (node) {
+        node.scrollTop = node.scrollHeight;
+      }
     } catch {
       setError('Нет связи с сайтом. Попробуйте ещё раз.');
     } finally {
@@ -423,11 +429,7 @@ function ChatWidget({ currentUser }: Props) {
   return (
     <>
       {menu && (
-        <div
-          className="chat-menu"
-          style={{ left: menu.x, top: menu.y }}
-          onClick={(event) => event.stopPropagation()}
-        >
+        <div className="chat-menu" style={{ left: menu.x, top: menu.y }}>
           <button type="button" className="chat-menu-item" onClick={() => void copyText(menu.message.text)}>
             Копировать текст
           </button>
