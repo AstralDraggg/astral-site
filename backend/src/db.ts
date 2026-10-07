@@ -421,6 +421,121 @@ export async function deleteSessionsForUser(userId: string): Promise<void> {
   await run('DELETE FROM sessions WHERE user_id = ?', [userId]);
 }
 
+// --- chat ---------------------------------------------------------------------
+
+export type ChatMessageRecord = {
+  id: number;
+  userId: string;
+  username: string;
+  text: string;
+  createdAt: string;
+  role: string;
+  pinned: boolean;
+  pinnedBy: string | null;
+};
+
+/** Сообщения чата с id больше afterId (восходящий порядок — так удобно догонять опрос). */
+export async function listChatMessages(afterId: number, limit = 80): Promise<ChatMessageRecord[]> {
+  const rows = await queryAll(
+    `SELECT id, user_id, username, text, created_at, pinned, pinned_by, role
+       FROM (
+         SELECT m.id, m.user_id, m.username, m.text, m.created_at, m.pinned, m.pinned_by, u.role
+           FROM chat_messages m
+           LEFT JOIN users u ON u.id = m.user_id
+          WHERE m.id > ?
+          ORDER BY m.id DESC
+          LIMIT ?
+       )
+      ORDER BY id ASC`,
+    [afterId, limit],
+  );
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    userId: String(row.user_id),
+    username: String(row.username),
+    text: String(row.text),
+    createdAt: String(row.created_at),
+    pinned: Number(row.pinned ?? 0) === 1,
+    pinnedBy: row.pinned_by ? String(row.pinned_by) : null,
+    role: row.role ? String(row.role) : 'user',
+  }));
+}
+
+/** Закреплённые сообщения — отдельным списком, чтобы они не выпадали из окна последних. */
+export async function listPinnedChatMessages(limit = 5): Promise<ChatMessageRecord[]> {
+  const rows = await queryAll(
+    `SELECT m.id, m.user_id, m.username, m.text, m.created_at, m.pinned, m.pinned_by, u.role
+       FROM chat_messages m
+       LEFT JOIN users u ON u.id = m.user_id
+      WHERE m.pinned = 1
+      ORDER BY m.id DESC
+      LIMIT ?`,
+    [limit],
+  );
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    userId: String(row.user_id),
+    username: String(row.username),
+    text: String(row.text),
+    createdAt: String(row.created_at),
+    pinned: true,
+    pinnedBy: row.pinned_by ? String(row.pinned_by) : null,
+    role: row.role ? String(row.role) : 'user',
+  }));
+}
+
+export async function setChatPin(id: number, pinned: boolean, by: string | null): Promise<void> {
+  await run('UPDATE chat_messages SET pinned = ?, pinned_by = ? WHERE id = ?', [
+    pinned ? 1 : 0,
+    pinned ? by : null,
+    id,
+  ]);
+}
+
+export async function deleteChatMessage(id: number): Promise<void> {
+  await run('DELETE FROM chat_messages WHERE id = ?', [id]);
+}
+
+export async function insertChatMessage(
+  userId: string,
+  username: string,
+  text: string,
+): Promise<number> {
+  const result = await db.execute({
+    sql: 'INSERT INTO chat_messages (user_id, username, text, created_at) VALUES (?, ?, ?, ?)',
+    args: [userId, username, text, new Date().toISOString()],
+  });
+  return Number(result.lastInsertRowid ?? 0);
+}
+
+/** Отмечает пользователя «онлайн» в чате. */
+export async function touchChatPresence(userId: string, username: string): Promise<void> {
+  await run(
+    `INSERT INTO chat_presence (user_id, username, last_seen) VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET username = excluded.username, last_seen = excluded.last_seen`,
+    [userId, username, new Date().toISOString()],
+  );
+}
+
+/** Сколько людей пинговали чат за последние windowMs миллисекунд. */
+export async function countChatOnline(windowMs: number): Promise<number> {
+  const cutoff = new Date(Date.now() - windowMs).toISOString();
+  const row = await queryOne('SELECT COUNT(*) AS total FROM chat_presence WHERE last_seen >= ?', [cutoff]);
+  return Number(row?.total ?? 0);
+}
+
+/** Чистит старые сообщения и протухшие отметки присутствия. */
+export async function cleanupChat(messageMaxAgeMs: number, presenceMaxAgeMs: number): Promise<void> {
+  await run('DELETE FROM chat_messages WHERE created_at < ?', [
+    new Date(Date.now() - messageMaxAgeMs).toISOString(),
+  ]);
+  await run('DELETE FROM chat_presence WHERE last_seen < ?', [
+    new Date(Date.now() - presenceMaxAgeMs).toISOString(),
+  ]);
+}
+
 const schema = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -469,13 +584,46 @@ CREATE TABLE IF NOT EXISTS email_codes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_email_codes_lookup ON email_codes (email, purpose);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  username TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  pinned_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS chat_presence (
+  user_id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  last_seen TEXT NOT NULL
+);
 `;
 
 export async function initSchema(): Promise<void> {
   await db.executeMultiple(schema);
   await ensureRoleColumn();
   await ensureUserColumns();
+  await ensureChatColumns();
   await migrateLegacyUsersFile();
+}
+
+/** Докидывает колонки в таблицу чата, если она уже создана без них. */
+async function ensureChatColumns(): Promise<void> {
+  const columns: Array<[string, string]> = [
+    ['pinned', 'INTEGER NOT NULL DEFAULT 0'],
+    ['pinned_by', 'TEXT'],
+  ];
+
+  for (const [name, definition] of columns) {
+    try {
+      await run(`ALTER TABLE chat_messages ADD COLUMN ${name} ${definition}`);
+    } catch {
+      // Колонка уже есть — это норма.
+    }
+  }
 }
 
 /** Добавляет колонку role в уже существующую таблицу (игнорирует «колонка уже есть»). */

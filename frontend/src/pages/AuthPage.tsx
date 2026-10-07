@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import userIcon from '../../assets/user-application-identity-authentication-login.svg';
-import { AuthResponse, AuthUser, tokenKey } from '../auth';
+import { AuthResponse, AuthUser, readCachedUser, tokenKey, writeCachedUser } from '../auth';
 
 type AuthPageProps = {
   mode: 'login' | 'register' | 'forgot';
@@ -37,7 +37,7 @@ function AuthPage({ mode }: AuthPageProps) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [cooldown, setCooldown] = useState(0);
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => readCachedUser());
   const pendingRef = useRef<PendingRegistration | null>(null);
 
   useEffect(() => {
@@ -66,6 +66,7 @@ function AuthPage({ mode }: AuthPageProps) {
         // Токен невалиден — только тогда чистим вход; сбой сети не разлогинивает.
         if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
+          writeCachedUser(null);
           return;
         }
 
@@ -74,6 +75,7 @@ function AuthPage({ mode }: AuthPageProps) {
         }
 
         const data = (await response.json()) as { user: AuthUser };
+        writeCachedUser(data.user);
         setCurrentUser(data.user);
       } catch {
         // Оставляем токен: возможно, это временный обрыв связи.
@@ -157,6 +159,7 @@ function AuthPage({ mode }: AuthPageProps) {
       }
 
       window.localStorage.setItem(tokenKey, data.token);
+      writeCachedUser(data.user);
       setCurrentUser(data.user);
       setMessage('Вы вошли. Перенаправляем...');
       setPassword('');
@@ -193,6 +196,7 @@ function AuthPage({ mode }: AuthPageProps) {
         }
 
         window.localStorage.setItem(tokenKey, data.token);
+        writeCachedUser(data.user);
         setCurrentUser(data.user);
         setMessage('Аккаунт создан. Перенаправляем...');
 
@@ -301,6 +305,7 @@ function AuthPage({ mode }: AuthPageProps) {
     }
 
     window.localStorage.removeItem(tokenKey);
+    writeCachedUser(null);
     setCurrentUser(null);
     setMessage('Вы вышли из аккаунта.');
   }

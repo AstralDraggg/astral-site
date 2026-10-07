@@ -5,7 +5,7 @@ import plusIcon from '../../assets/plus.svg';
 import closeIcon from '../../assets/close-circle.svg';
 import peopleIcon from '../../assets/people-community.svg';
 import profileIcon from '../../assets/user.svg';
-import { AuthUser, tokenKey } from '../auth';
+import { AuthUser, tokenKey, writeCachedUser } from '../auth';
 
 type Friend = {
   id: string;
@@ -54,6 +54,7 @@ function FriendsPage() {
         // Токен невалиден — только тогда выкидываем из аккаунта.
         if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
+          writeCachedUser(null);
           setUser(null);
           return;
         }

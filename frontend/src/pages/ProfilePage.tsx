@@ -14,7 +14,7 @@ import sunIcon from '../../assets/sun.svg';
 import playIcon from '../../assets/play.svg';
 import updateIcon from '../../assets/update.svg';
 import flashIcon from '../../assets/flash-circle.svg';
-import { AuthUser, formatDate, tokenKey } from '../auth';
+import { AuthUser, formatDate, tokenKey, writeCachedUser } from '../auth';
 
 type PurchaseItem = {
   id: string;
@@ -72,6 +72,7 @@ function ProfilePage() {
         // Токен невалиден — только тогда выкидываем из аккаунта.
         if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
+          writeCachedUser(null);
           setUser(null);
           return;
         }
@@ -81,6 +82,7 @@ function ProfilePage() {
         }
 
         const data = (await response.json()) as { user: AuthUser };
+        writeCachedUser(data.user);
         setUser(data.user);
         void loadPurchases(token);
         
@@ -150,6 +152,7 @@ function ProfilePage() {
     }
 
     window.localStorage.removeItem(tokenKey);
+    writeCachedUser(null);
     navigate('/login');
   }
 

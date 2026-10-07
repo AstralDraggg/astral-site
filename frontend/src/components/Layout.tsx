@@ -11,7 +11,8 @@ import moonIcon from '../../assets/moon.svg';
 import sunIcon from '../../assets/sun.svg';
 import peopleIcon from '../../assets/people-community.svg';
 import adminIcon from '../../assets/ranking.svg';
-import { AuthUser, tokenKey } from '../auth';
+import { AuthUser, readCachedUser, tokenKey, writeCachedUser } from '../auth';
+import ChatWidget from './ChatWidget';
 
 const navItems = [
   { label: 'Главная', icon: homeIcon, to: '/' },
@@ -26,7 +27,7 @@ type LayoutProps = {
 
 function Layout({ transitionStage = 'idle' }: LayoutProps) {
   const location = useLocation();
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => readCachedUser());
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') {
       return 'dark';
@@ -54,6 +55,7 @@ function Layout({ transitionStage = 'idle' }: LayoutProps) {
         // Токен невалиден — только тогда выходим из аккаунта.
         if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
+          writeCachedUser(null);
           setCurrentUser(null);
           return;
         }
@@ -63,6 +65,7 @@ function Layout({ transitionStage = 'idle' }: LayoutProps) {
         }
 
         const data = (await response.json()) as { user: AuthUser };
+        writeCachedUser(data.user);
         setCurrentUser(data.user);
       } catch {
         // Обрыв связи: оставляем вход и не дёргаем шапку в никуда.
@@ -170,6 +173,8 @@ function Layout({ transitionStage = 'idle' }: LayoutProps) {
       <main className={`main-layout route-stage-${transitionStage}`}>
         <Outlet />
       </main>
+
+      <ChatWidget currentUser={currentUser} />
     </div>
   );
 }

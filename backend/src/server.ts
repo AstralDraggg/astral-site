@@ -5,8 +5,11 @@ import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  cleanupChat,
   cleanupExpiredSessions,
   claimLicenseKey,
+  countChatOnline,
+  deleteChatMessage,
   deleteEmailCodes,
   deleteLicenseKey,
   deleteSession,
@@ -20,15 +23,20 @@ import {
   findUserByUsername,
   getSession,
   initSchema,
+  insertChatMessage,
   insertLicenseKey,
   isRemoteDb,
+  listChatMessages,
+  listPinnedChatMessages,
   listLicenseKeys,
   readUsers,
   recordUserIp,
   saveEmailCode,
   saveSession,
+  setChatPin,
   setCodeAttempts,
   setUserBlocked,
+  touchChatPresence,
   writeUsers,
   type EmailCodeRecord,
   type Purchase,
@@ -47,6 +55,11 @@ const TOKEN_ALGORITHM = 'aes-256-gcm';
 const TOKEN_IV_LENGTH = 16;
 const TOKEN_AUTH_TAG_LENGTH = 16;
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+/** Сколько считаем пользователя «онлайн» в чате без пинга (клиент пингует раз в 30с). */
+const CHAT_ONLINE_WINDOW_MS = 75_000;
+/** Глубина истории чата; старое удаляется при чистке. */
+const CHAT_MESSAGE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const CHAT_MAX_LENGTH = 500;
 
 if (!process.env.TOKEN_SECRET) {
   console.warn('[astral] TOKEN_SECRET is not set, using the built-in development secret.');
@@ -345,6 +358,18 @@ function adminUsernames(): string[] {
 
 function isAdmin(user: UserRecord): boolean {
   return user.role === 'admin' || adminUsernames().includes(user.username.toLowerCase());
+}
+
+/**
+ * Роль так, как её видят на сайте. В базе у админа из ADMIN_USERS может стоять
+ * «user» — без этого фикса такой человек в чате писал бы «юзер».
+ */
+function withChatRoles<T extends { username: string; role: string }>(rows: T[]): T[] {
+  const admins = new Set(adminUsernames());
+  return rows.map((row) => ({
+    ...row,
+    role: row.role === 'admin' || admins.has(row.username.toLowerCase()) ? 'admin' : 'user',
+  }));
 }
 
 /** Проверяет, что запрос от вошедшего администратора (иначе 401/403). */
@@ -1097,6 +1122,149 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
     return;
   }
 
+  // --- chat ---------------------------------------------------------------
+
+  // Лента чата открыта всем (гость видит, но писать может только авторизованный).
+  if (request.method === 'GET' && url === '/api/chat') {
+    if (!rateLimit(request, 'chat-read', 120)) {
+      sendJson(response, 429, { error: 'Слишком много запросов, попробуйте позже.' });
+      return;
+    }
+
+    try {
+      const afterRaw = new URLSearchParams(queryString).get('after');
+      const parsedAfter = Number.parseInt(afterRaw ?? '', 10);
+      const afterId = Number.isFinite(parsedAfter) && parsedAfter > 0 ? parsedAfter : 0;
+
+      const [messages, pinned, online] = await Promise.all([
+        listChatMessages(afterId, 80),
+        listPinnedChatMessages(5),
+        countChatOnline(CHAT_ONLINE_WINDOW_MS),
+      ]);
+
+      sendJson(response, 200, { messages: withChatRoles(messages), pinned: withChatRoles(pinned), online });
+      return;
+    } catch {
+      sendJson(response, 400, { error: 'Некорректный запрос.' });
+      return;
+    }
+  }
+
+  if (request.method === 'POST' && url === '/api/chat') {
+    const user = await requireAuth(request, response);
+    if (!user) return;
+
+    if (!rateLimit(request, 'chat-send', 12)) {
+      sendJson(response, 429, { error: 'Слишком много сообщений. Подождите минуту.' });
+      return;
+    }
+
+    try {
+      const body = await readBody(request);
+      const text = String(body.text ?? '').replace(/\s+/g, ' ').trim();
+
+      if (!text) {
+        sendJson(response, 400, { error: 'Сообщение пустое.' });
+        return;
+      }
+
+      if (text.length > CHAT_MAX_LENGTH) {
+        sendJson(response, 400, {
+          error: `Слишком длинное сообщение — максимум ${CHAT_MAX_LENGTH} символов.`,
+        });
+        return;
+      }
+
+      const id = await insertChatMessage(user.id, user.username, text);
+      await touchChatPresence(user.id, user.username);
+
+      sendJson(response, 200, {
+        id,
+        message: {
+          id,
+          userId: user.id,
+          username: user.username,
+          text,
+          createdAt: new Date().toISOString(),
+          role: isAdmin(user) ? 'admin' : 'user',
+          pinned: false,
+          pinnedBy: null,
+        },
+      });
+      return;
+    } catch {
+      sendJson(response, 400, { error: 'Некорректный запрос.' });
+      return;
+    }
+  }
+
+  // «Онлайн» в чате держится пингом открытого виджета.
+  if (request.method === 'POST' && url === '/api/chat/ping') {
+    const user = await requireAuth(request, response);
+    if (!user) return;
+
+    if (!rateLimit(request, 'chat-ping', 40)) {
+      sendJson(response, 429, { error: 'Слишком много запросов.' });
+      return;
+    }
+
+    await touchChatPresence(user.id, user.username);
+    sendJson(response, 200, { online: await countChatOnline(CHAT_ONLINE_WINDOW_MS) });
+    return;
+  }
+
+  if (request.method === 'POST' && url === '/api/chat/pin') {
+    const user = await requireAuth(request, response);
+    if (!user) return;
+
+    if (!isAdmin(user)) {
+      sendJson(response, 403, { error: 'Закреплять сообщения может только администратор.' });
+      return;
+    }
+
+    if (!rateLimit(request, 'chat-pin', 30)) {
+      sendJson(response, 429, { error: 'Слишком много запросов.' });
+      return;
+    }
+
+    try {
+      const body = await readBody(request);
+      const id = Number.parseInt(body.id ?? '', 10);
+      if (!Number.isFinite(id) || id <= 0) {
+        sendJson(response, 400, { error: 'Не передано сообщение.' });
+        return;
+      }
+
+      const pinned = body.pinned === 'true';
+      await setChatPin(id, pinned, user.username);
+      sendJson(response, 200, { ok: true, pinned });
+      return;
+    } catch {
+      sendJson(response, 400, { error: 'Некорректный запрос.' });
+      return;
+    }
+  }
+
+  if (request.method === 'DELETE' && url.startsWith('/api/chat/')) {
+    const user = await requireAuth(request, response);
+    if (!user) return;
+
+    if (!isAdmin(user)) {
+      sendJson(response, 403, { error: 'Удалять сообщения может только администратор.' });
+      return;
+    }
+
+    const id = Number.parseInt(url.slice('/api/chat/'.length), 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      sendJson(response, 400, { error: 'Не передано сообщение.' });
+      return;
+    }
+
+    await deleteChatMessage(id);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   if (request.method === 'POST' && url === '/api/auth/change-email') {
     const user = await requireAuth(request, response);
     if (!user) return;
@@ -1799,6 +1967,7 @@ function ensureReady(): Promise<void> {
     readyPromise = (async () => {
       await initSchema();
       await cleanupExpiredSessions(SESSION_MAX_AGE);
+      await cleanupChat(CHAT_MESSAGE_MAX_AGE_MS, CHAT_ONLINE_WINDOW_MS * 2);
     })();
   }
 
@@ -1810,6 +1979,7 @@ async function start(): Promise<void> {
 
   setInterval(() => {
     void cleanupExpiredSessions(SESSION_MAX_AGE);
+    void cleanupChat(CHAT_MESSAGE_MAX_AGE_MS, CHAT_ONLINE_WINDOW_MS * 2);
   }, 60 * 60 * 1000).unref();
 
   createServer(nodeHandler).listen(port, () => {

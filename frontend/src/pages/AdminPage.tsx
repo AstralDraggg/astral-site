@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import adminIcon from '../../assets/ranking.svg';
 import userIcon from '../../assets/user.svg';
-import { AuthUser, formatDate, tokenKey } from '../auth';
+import { AuthUser, formatDate, tokenKey, writeCachedUser } from '../auth';
 
 type AdminStats = {
   users: number;
@@ -144,6 +144,7 @@ function AdminPage() {
         // Токен невалиден — только тогда выкидываем из аккаунта.
         if (response.status === 401 || response.status === 403) {
           window.localStorage.removeItem(tokenKey);
+          writeCachedUser(null);
           setUser(null);
           return;
         }
