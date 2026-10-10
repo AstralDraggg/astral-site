@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, Location } from 'react-router-dom';
 import Layout from './components/Layout';
-import GateGate from './components/GateGate';
 import HomePage from './pages/HomePage';
 import ProductsPage from './pages/ProductsPage';
 import TermsPage from './pages/TermsPage';
@@ -11,21 +10,14 @@ import ProfilePage from './pages/ProfilePage';
 import FriendsPage from './pages/FriendsPage';
 import AdminPage from './pages/AdminPage';
 import { SitePayload, fallbackPayload } from './siteData';
-import { gatePassed } from './gate';
 
 function AppRoutes() {
   const location = useLocation();
-  // Пока проверка при входе не пройдена, сайт не рисуем вообще.
-  const [gateOk, setGateOk] = useState(gatePassed);
   const [payload, setPayload] = useState<SitePayload>(fallbackPayload);
   const [displayLocation, setDisplayLocation] = useState<Location>(location);
   const [transitionStage, setTransitionStage] = useState<'idle' | 'exit' | 'enter'>('enter');
 
   useEffect(() => {
-    if (!gateOk) {
-      return;
-    }
-
     let cancelled = false;
 
     async function loadSitePayload() {
@@ -51,25 +43,7 @@ function AppRoutes() {
     return () => {
       cancelled = true;
     };
-  }, [gateOk]);
-
-  const handleGatePass = useCallback(() => setGateOk(true), []);
-
-  // Куки живёт несколько часов. Если он истёк посреди долгой сессии,
-  // возвращаем проверку, иначе чат и профиль начнут получать 403.
-  useEffect(() => {
-    if (!gateOk) {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      if (!gatePassed()) {
-        setGateOk(false);
-      }
-    }, 60_000);
-
-    return () => window.clearInterval(timer);
-  }, [gateOk]);
+  }, []);
 
   useEffect(() => {
     if (location.pathname === displayLocation.pathname) {
@@ -208,10 +182,6 @@ function AppRoutes() {
       mutationObserver.disconnect();
     };
   }, []);
-
-  if (!gateOk) {
-    return <GateGate onPass={handleGatePass} />;
-  }
 
   return (
     <Routes location={displayLocation}>

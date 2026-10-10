@@ -5,18 +5,6 @@ import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  allowChallenge,
-  clientIp,
-  guardRequest,
-  isBrowserLike,
-  isGateExempt,
-  isValidGateToken,
-  makeChallenge,
-  readGateToken,
-  setGateCookie,
-  verifyChallenge,
-} from './gate.js';
-import {
   cleanupChat,
   cleanupExpiredSessions,
   claimLicenseKey,
@@ -452,6 +440,14 @@ function clientKey(request: IncomingMessage, scope: string): string {
   return `${scope}:${clientIp(request)}`;
 }
 
+/** IP клиента: учитывает X-Forwarded-For от прокси/Vercel. */
+function clientIp(request: IncomingMessage): string | null {
+  const forwarded = request.headers['x-forwarded-for'];
+  const forwardedIp = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
+  const ip = forwardedIp || request.socket?.remoteAddress || '';
+  return ip || null;
+}
+
 function rateLimit(request: IncomingMessage, scope: string, limit = 30, windowMs = 60_000): boolean {
   const key = clientKey(request, scope);
   const now = Date.now();
@@ -731,18 +727,6 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
     return;
   }
 
-  // Общая защита от флуда: бюджет запросов на адрес, а упорным — пауза.
-  if (isApi) {
-    const flood = guardRequest(request);
-    if (flood) {
-      if (flood.retryAfter) {
-        response.setHeader('Retry-After', String(flood.retryAfter));
-      }
-      sendJson(response, flood.status, { error: flood.error, limited: true });
-      return;
-    }
-  }
-
   if (!isApi) {
     if (request.method === 'GET' || request.method === 'HEAD') {
       await serveStatic(request, response);
@@ -758,50 +742,6 @@ export async function nodeHandler(request: IncomingMessage, response: ServerResp
   if (isGetLike && url === '/api/health') {
     sendJson(response, 200, { ok: true, service: 'astral-backend', database: isRemoteDb() ? 'turso' : 'file' });
     return;
-  }
-
-  // --- проверка при входе на сайт ------------------------------------------
-
-  if (isGetLike && url === '/api/gate/challenge') {
-    if (!allowChallenge(request)) {
-      response.setHeader('Retry-After', '60');
-      sendJson(response, 429, { error: 'Слишком много запросов. Подождите минуту.' });
-      return;
-    }
-
-    sendJson(response, 200, makeChallenge());
-    return;
-  }
-
-  if (request.method === 'POST' && url === '/api/gate/verify') {
-    const body = await readBody(request);
-    const result = verifyChallenge(request, body);
-
-    if (!result.ok) {
-      if (result.retryAfter) {
-        response.setHeader('Retry-After', String(result.retryAfter));
-      }
-      sendJson(response, result.status, { error: result.error });
-      return;
-    }
-
-    setGateCookie(response, result.token, result.maxAge);
-    sendJson(response, 200, { ok: true, maxAge: result.maxAge });
-    return;
-  }
-
-  // Всё, что не связано с лоадером и не служебное, открывается только после
-  // проверки браузера выше.
-  if (!isGateExempt(url)) {
-    if (!isBrowserLike(request)) {
-      sendJson(response, 403, { error: 'Запросы из скриптов запрещены.', bot: true });
-      return;
-    }
-
-    if (!isValidGateToken(readGateToken(request))) {
-      sendJson(response, 403, { error: 'Пройдите проверку браузера.', gate: true });
-      return;
-    }
   }
 
   // Диагностика: что видит сервер (без значений секретов).
