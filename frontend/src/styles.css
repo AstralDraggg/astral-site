@@ -8645,7 +8645,6 @@ body {
 .buy-price b { margin-left: 8px; font-size: 22px; color: var(--text-primary); }
 
 .buy-hint { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
-.buy-hint-warn { color: var(--danger); }
 
 .buy-pay {
   margin-top: auto;

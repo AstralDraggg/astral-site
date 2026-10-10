@@ -19,7 +19,6 @@ function BuyModal({ product, products, onClose }: BuyModalProps) {
   // Срок не подставляем заранее: пока не выбраны и способ, и срок — ничего
   // не открывается, чтобы случайно не уехать на чужой лот.
   const [term, setTerm] = useState<LicenseTerm | null>(null);
-  const [blocked, setBlocked] = useState(false);
 
   const availableTerms = TERM_OPTIONS.filter((option) =>
     products.some((item) => item.id === option.productId),
@@ -40,18 +39,26 @@ function BuyModal({ product, products, onClose }: BuyModalProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  /**
+   * Открываем лот через скрытую ссылку, а не window.open: так вкладку
+   * не может заблокировать даже агрессивный блокировщик, а сама страница
+   * Funpay не получает доступ к нашей вкладке (rel="noopener").
+   */
   function openFunpay(termToUse: LicenseTerm | null = term) {
     const target = funpayUrl(termToUse, product.id);
     if (!target) {
       return;
     }
 
-    const opened = window.open(target, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      // Браузер заблокировал вкладку — оставляем окно и просим нажать кнопку.
-      setBlocked(true);
-      return;
-    }
+    const link = document.createElement('a');
+    link.href = target;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
     onClose();
   }
 
@@ -144,12 +151,7 @@ function BuyModal({ product, products, onClose }: BuyModalProps) {
               {needsLink ? 'Оплата недоступна' : 'Оплатить через FUNPAY'}
             </button>
 
-            {blocked && (
-              <p className="buy-hint buy-hint-warn">
-                Браузер не дал открыть вкладку. Нажмите кнопку выше ещё раз.
-              </p>
-            )}
-            {!blocked && ready && !method && (
+            {ready && !method && (
               <p className="buy-hint">Оплата проходит на Funpay — там же получишь товар.</p>
             )}
           </div>
