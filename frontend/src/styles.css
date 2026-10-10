@@ -8755,3 +8755,39 @@ body {
 
 .gate-retry:hover { background: var(--accent-strong); }
 
+/* --------------------------- пустое состояние видео --------------------------- */
+
+.videos-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 56px 24px;
+  border-radius: 22px;
+  border: 1px dashed var(--line);
+  background: var(--panel-soft);
+  text-align: center;
+}
+
+.videos-empty-icon {
+  width: 42px;
+  height: 42px;
+  opacity: 0.5;
+}
+
+.videos-empty-title {
+  margin: 6px 0 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.videos-empty-text {
+  margin: 0;
+  max-width: 470px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+

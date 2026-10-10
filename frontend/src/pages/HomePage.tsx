@@ -13,7 +13,6 @@ import chatIcon from '../../assets/chatbubbles.svg';
 import categoryIcon from '../../assets/category-alt.svg';
 import discordIcon from '../../assets/discord-fill.svg';
 import telegramIcon from '../../assets/telegram.svg';
-import vkIcon from '../../assets/vk.svg';
 import homeIcon from '../../assets/home.svg';
 import termsIcon from '../../assets/book-solid.svg';
 import infoIcon from '../../assets/info-circle.svg';
@@ -29,38 +28,22 @@ const iconMap: Record<string, string> = {
   configs: cloudIcon,
 };
 
-const videoCards = [
-  {
-    id: 'video-1',
-    views: '8042',
-    likes: '245',
-    duration: '37:36',
-    author: 'astralclips',
-    title: 'ЛУЧШИЕ НАСТРОЙКИ ДЛЯ ЛЕГИТ-ФАЙТОВ',
-    previewClass: 'video-preview-a',
-    url: 'https://www.youtube.com/results?search_query=minecraft+pvp+client+best+settings',
-  },
-  {
-    id: 'video-2',
-    views: '5177',
-    likes: '101',
-    duration: '12:44',
-    author: 'astralzone',
-    title: 'КАК СОБРАТЬ ХОРОШИЙ КОНФИГ ЗА ОДНУ СЕССИЮ',
-    previewClass: 'video-preview-b',
-    url: 'https://www.youtube.com/results?search_query=minecraft+pvp+client+config+setup',
-  },
-  {
-    id: 'video-3',
-    views: '5791',
-    likes: '63',
-    duration: '2:01',
-    author: 'ph4smob',
-    title: 'ПОЧЕМУ ЧИСТЫЕ КЛИЕНТЫ ЛУЧШЕ СЛУЧАЙНЫХ ПАСТОВ',
-    previewClass: 'video-preview-c',
-    url: 'https://www.youtube.com/results?search_query=minecraft+clean+pvp+client',
-  },
-];
+type VideoCard = {
+  id: string;
+  views: string;
+  likes: string;
+  duration: string;
+  author: string;
+  title: string;
+  previewClass: string;
+  url: string;
+};
+
+/**
+ * Видео пока нет. Как снимем обзоры — добавляй объекты сюда,
+ * карточки и счётчики подтянутся сами, пустой экран исчезнет.
+ */
+const videoCards: VideoCard[] = [];
 
 type HomePageProps = {
   payload: SitePayload;
@@ -126,12 +109,22 @@ function HomePage({ payload }: HomePageProps) {
             <img src={youtubeIcon} alt="" aria-hidden="true" className="mini-icon" />
             Видео
           </div>
-          <h2 className="videos-title">Смотри лучшие видео!</h2>
+          <h2 className="videos-title">Где наши видео?</h2>
           <p className="videos-subtitle">
-            На превью видно, как выглядит клиент и как ощущаются разные сборки в деле.
+            Обзоры клиента, конфиги и разборы сборок — всё появится здесь.
           </p>
         </div>
 
+        {videoCards.length === 0 ? (
+          <div className="videos-empty">
+            <img src={youtubeIcon} alt="" aria-hidden="true" className="videos-empty-icon" />
+            <p className="videos-empty-title">Пока видео нет</p>
+            <p className="videos-empty-text">
+              Раздел готовится: снимем обзор клиента, конфиги и пару PvP-клипов.
+              Как выложим — они появятся здесь.
+            </p>
+          </div>
+        ) : (
         <div className="videos-grid">
           {videoCards.map((video, index) => (
             <a
@@ -168,6 +161,7 @@ function HomePage({ payload }: HomePageProps) {
             </a>
           ))}
         </div>
+        )}
       </section>
 
       <footer className="home-footer content-panel inner-panel" data-reveal="footer">
@@ -192,10 +186,6 @@ function HomePage({ payload }: HomePageProps) {
               <a href={siteConfig.telegramUrl} target="_blank" rel="noreferrer" className="footer-link">
                 <img src={telegramIcon} alt="" aria-hidden="true" className="mini-icon" />
                 Telegram
-              </a>
-              <a href={siteConfig.vkUrl} target="_blank" rel="noreferrer" className="footer-link">
-                <img src={vkIcon} alt="" aria-hidden="true" className="mini-icon" />
-                VK
               </a>
             </div>
           </div>
