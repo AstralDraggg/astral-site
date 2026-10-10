@@ -1,5 +1,4 @@
 import { CSSProperties, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import productsIcon from '../../assets/marketpurchase.svg';
 import boxIcon from '../../assets/box.svg';
 import cupIcon from '../../assets/cup.svg';
@@ -9,7 +8,7 @@ import swordTabIcon from '../../assets/netherite-sword.png';
 import totemTabIcon from '../../assets/totem-of-undying.png';
 import peopleIcon from '../../assets/people-community.svg';
 import { SitePayload, ProductCategory, Product } from '../siteData';
-import { tokenKey } from '../auth';
+import BuyModal from '../components/BuyModal';
 
 type ProductsPageProps = {
   payload: SitePayload;
@@ -17,55 +16,10 @@ type ProductsPageProps = {
 
 const productIcons = [boxIcon, cupIcon, moreIcon, updateIcon];
 
-type Notice = { kind: 'ok' | 'error'; text: string } | null;
-
 function ProductsPage({ payload }: ProductsPageProps) {
-  const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState<ProductCategory>('subscription');
   const [hoveredCategory, setHoveredCategory] = useState<ProductCategory | null>(null);
-  const [notice, setNotice] = useState<Notice>(null);
-  const [buyingId, setBuyingId] = useState<string | null>(null);
-
-  async function handleBuy(product: Product) {
-    const token = window.localStorage.getItem(tokenKey);
-
-    if (!token) {
-      setNotice({ kind: 'error', text: 'Сначала войдите в аккаунт, потом покупайте товар.' });
-      window.setTimeout(() => navigate('/login'), 700);
-      return;
-    }
-
-    setBuyingId(product.id);
-    setNotice(null);
-
-    try {
-      const response = await fetch('/api/purchase', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ productId: product.id }),
-      });
-
-      const data = (await response.json()) as { error?: string; purchase?: { name: string } };
-
-      if (!response.ok || !data.purchase) {
-        setNotice({ kind: 'error', text: data.error ?? 'Покупка не прошла, попробуйте ещё раз.' });
-        return;
-      }
-
-      setNotice({
-        kind: 'ok',
-        text: `Покупка успешна: ${data.purchase.name}. Подробности в профиле.`,
-      });
-    } catch {
-      setNotice({ kind: 'error', text: 'Сервер не отвечает.' });
-    } finally {
-      setBuyingId(null);
-      window.setTimeout(() => setNotice(null), 5000);
-    }
-  }
+  const [buyTarget, setBuyTarget] = useState<Product | null>(null);
 
   const subscriptions = payload.products.filter((product) => product.category === 'subscription');
   const additions = payload.products.filter((product) => product.category === 'addition');
@@ -139,12 +93,6 @@ function ProductsPage({ payload }: ProductsPageProps) {
       </div>
 
       <div className="products-stage">
-        {notice && (
-          <p className={notice.kind === 'ok' ? 'form-success products-notice' : 'form-error products-notice'}>
-            {notice.text}
-          </p>
-        )}
-
         {activeCategory === 'subscription' && (
           <div className="products-reference-grid products-enter">
             {visibleProducts.map((product, index) => (
@@ -192,11 +140,10 @@ function ProductsPage({ payload }: ProductsPageProps) {
                 <button
                   type="button"
                   className="reference-buy"
-                  onClick={() => handleBuy(product)}
-                  disabled={buyingId === product.id}
+                  onClick={() => setBuyTarget(product)}
                 >
                   <img src={productsIcon} alt="" aria-hidden="true" className="mini-icon" />
-                  {buyingId === product.id ? 'Обработка...' : 'Купить'}
+                  Купить
                 </button>
               </article>
             ))}
@@ -222,11 +169,10 @@ function ProductsPage({ payload }: ProductsPageProps) {
                 <button
                   type="button"
                   className="reference-buy compact-buy"
-                  onClick={() => handleBuy(product)}
-                  disabled={buyingId === product.id}
+                  onClick={() => setBuyTarget(product)}
                 >
                   <img src={productsIcon} alt="" aria-hidden="true" className="mini-icon" />
-                  {buyingId === product.id ? 'Обработка...' : 'Купить'}
+                  Купить
                 </button>
               </article>
             ))}
@@ -248,15 +194,22 @@ function ProductsPage({ payload }: ProductsPageProps) {
             <button
               type="button"
               className="reference-buy compact-buy"
-              onClick={() => handleBuy(product)}
-              disabled={buyingId === product.id}
+              onClick={() => setBuyTarget(product)}
             >
               <img src={productsIcon} alt="" aria-hidden="true" className="mini-icon" />
-              {buyingId === product.id ? 'Обработка...' : 'Купить'}
+              Купить
             </button>
           </article>
         ))}
       </div>
+
+      {buyTarget && (
+        <BuyModal
+          product={buyTarget}
+          products={payload.products}
+          onClose={() => setBuyTarget(null)}
+        />
+      )}
     </section>
   );
 }

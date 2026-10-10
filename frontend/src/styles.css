@@ -8563,3 +8563,107 @@ body {
     height: min(70vh, calc(100vh - 96px));
   }
 }
+
+/* --------------------------- окно покупки --------------------------- */
+
+.buy-modal { max-width: 760px; }
+.buy-modal .modal-close { font-size: 22px; line-height: 1; color: var(--text-secondary); }
+
+.buy-body {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 26px;
+  padding: 24px 28px 28px;
+}
+
+.buy-column {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  min-width: 0;
+}
+
+.buy-label {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.buy-method {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 30px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+.buy-method:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+.buy-method-active {
+  border-color: var(--accent);
+  background: rgba(132, 247, 175, 0.1);
+  box-shadow: 0 0 0 3px rgba(132, 247, 175, 0.16);
+}
+
+.buy-funpay-logo {
+  width: 136px;
+  height: auto;
+  filter: brightness(0) invert(1);
+}
+:root[data-theme="light"] .buy-funpay-logo { filter: brightness(0); }
+
+.buy-method-name { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.buy-method-active .buy-method-name { color: var(--text-primary); }
+
+.buy-terms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.buy-term {
+  padding: 13px 6px;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.16s ease;
+}
+.buy-term:hover { border-color: var(--line-strong); color: var(--text-primary); }
+.buy-term-active {
+  background: var(--accent);
+  border-color: transparent;
+  color: #06170e;
+}
+.buy-term-active:hover { color: #06170e; }
+
+.buy-price { margin: 2px 0 0; font-size: 14px; color: var(--text-muted); }
+.buy-price b { margin-left: 8px; font-size: 22px; color: var(--text-primary); }
+
+.buy-hint { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
+.buy-hint-warn { color: var(--danger); }
+
+.buy-pay {
+  margin-top: auto;
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: 14px;
+  border: none;
+  background: var(--accent);
+  color: #06170e;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.16s ease, opacity 0.16s ease;
+}
+.buy-pay:hover:not(:disabled) { background: var(--accent-strong); }
+.buy-pay:disabled { opacity: 0.38; cursor: not-allowed; }
+
+@media (max-width: 720px) {
+  .buy-body { grid-template-columns: 1fr; gap: 20px; padding: 20px; }
+  .buy-funpay-logo { width: 118px; }
+}
